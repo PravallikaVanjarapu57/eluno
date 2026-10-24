@@ -1,0 +1,39 @@
+{
+  "name": "eluno-till",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Eluno till app (v1): replaces Shopify POS, writes to Shopify through an adapter",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "tsx scripts/start.ts",
+    "start:flaky": "tsx scripts/start.ts --flaky",
+    "api": "tsx src/server.ts",
+    "mock": "tsx scripts/mock.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "demo": "tsx scripts/demo.ts"
+  },
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "express": "^5.3.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.6.5",
+    "@types/supertest": "^7.2.1",
+    "eslint": "^10.13.0",
+    "supertest": "^7.3.1",
+    "tsx": "^4.23.15",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.72.0",
+    "vitest": "^5.0.5"
+  }
+}

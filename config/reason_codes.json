@@ -1,0 +1,15 @@
+{
+  "about": "Reason codes staff pick from. Finance/audit own this list; adding a code is a data change.",
+  "discount": [
+    { "code": "WALKOUT_SAVE", "label": "Customer about to walk out" },
+    { "code": "PRICE_MATCH", "label": "Matching a competitor's price" },
+    { "code": "SERVICE_RECOVERY", "label": "Making up for a service failure" },
+    { "code": "LOYALTY_GOODWILL", "label": "Long-standing customer goodwill" }
+  ],
+  "refund": [
+    { "code": "CHANGED_MIND", "label": "Customer changed their mind" },
+    { "code": "DEFECTIVE", "label": "Product defect" },
+    { "code": "WRONG_RX", "label": "Prescription was wrong" },
+    { "code": "NON_ADAPTATION", "label": "Could not adapt to the lens" }
+  ]
+}

@@ -1,0 +1,1759 @@
+{
+  "info": {
+    "name": "Eluno Till v1",
+    "_postman_id": "3b8f2a8e-5f4c-4a6e-9a7e-2f1d6c0e7a41",
+    "description": "Every endpoint of the Eluno till API, in the order of a real bill.\n\n**Start the server first:** `./run.sh` (API on :3000, Shopify/store-tool/terminal mock on :8787).\n\nRun the folders top to bottom (or the whole collection in the Runner): each request saves the ids the next one needs (`cartId`, `invoiceNo`, `creditNoteNo`, `shopifyOrderId`) into collection variables.\n\n- Money is always integer **paise** (`1869700` = ₹18,697.00).\n- Invoice and credit-note numbers contain slashes (`ELU/HSR/FY26/00003`), so URLs use the URL-encoded copies `invoiceNoEnc` / `creditNoteNoEnc`.\n- Errors are `{code, message, details}`; `message` is written for sales staff.\n- The mock is in memory; restart the server to reset Shopify. Delete `data/till.db` to reset the till's own data (invoice series, carts, bills).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000"
+    },
+    {
+      "key": "mockUrl",
+      "value": "http://localhost:8787"
+    },
+    {
+      "key": "phone",
+      "value": "9000000005",
+      "description": "Karthik Reddy: priority + progressive campaign, Rx RX5007"
+    },
+    {
+      "key": "storeCode",
+      "value": "HSR"
+    },
+    {
+      "key": "staffId",
+      "value": "S105",
+      "description": "Sales associate at HSR"
+    },
+    {
+      "key": "managerId",
+      "value": "S108",
+      "description": "Store manager at HSR (can approve discounts)"
+    },
+    {
+      "key": "frameVariantId",
+      "value": "91000003",
+      "description": "FR-0003, 2 in stock at HSR"
+    },
+    {
+      "key": "lensVariantId",
+      "value": "91000083",
+      "description": "LN-0043 progressive 1.60 blue cut"
+    },
+    {
+      "key": "today",
+      "value": "",
+      "description": "Set automatically to today's IST date"
+    },
+    {
+      "key": "cartId",
+      "value": ""
+    },
+    {
+      "key": "invoiceNo",
+      "value": ""
+    },
+    {
+      "key": "invoiceNoEnc",
+      "value": ""
+    },
+    {
+      "key": "shopifyOrderId",
+      "value": ""
+    },
+    {
+      "key": "creditNoteNo",
+      "value": ""
+    },
+    {
+      "key": "creditNoteNoEnc",
+      "value": ""
+    },
+    {
+      "key": "errCartId",
+      "value": ""
+    },
+    {
+      "key": "errInvoiceNoEnc",
+      "value": ""
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Business date is IST; set {{today}} once if empty.",
+          "if (!pm.collectionVariables.get('today')) {",
+          "  const ist = new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10);",
+          "  pm.collectionVariables.set('today', ist);",
+          "}"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "0. Health",
+      "description": "Is the API up, and what config did it load?",
+      "item": [
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Returns loaded offer and tax-rate counts and the SQLite schema version."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"ok\", () => pm.expect(pm.response.json().ok).to.be.true);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1. Customer + prescription",
+      "description": "Must 1: customer by phone (Shopify) and the prescription in force (store tool).",
+      "item": [
+        {
+          "name": "Lookup customer by phone",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/customers?phone={{phone}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customers"
+              ],
+              "query": [
+                {
+                  "key": "phone",
+                  "value": "{{phone}}"
+                }
+              ]
+            },
+            "description": "Phone is normalised (`90000 00005`, `+91-…`, `0…` all work). Returns the customer, billing-screen flags (priority, campaigns) and `prescription` with status `valid` | `expired` | `none_on_file` | `unavailable`, plus warnings (external Rx, axis off the 5° grid) and skipped prescriptions with reasons (future-dated, expired, another customer's)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"Rx in force\", () => pm.expect(b.prescription.status).to.eql(\"valid\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Lookup: future-dated + expired Rx (…12)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/customers?phone=9000000012",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customers"
+              ],
+              "query": [
+                {
+                  "key": "phone",
+                  "value": "9000000012"
+                }
+              ]
+            },
+            "description": "Customer 80001012: the newest Rx (RX5018) is dated in the future and is skipped; the rest are expired, so status is `expired` with 'Book an eye test'."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"expired\", () => pm.expect(pm.response.json().prescription.status).to.eql(\"expired\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Lookup: external Rx, off-grid axis (…03)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/customers?phone=9000000003",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customers"
+              ],
+              "query": [
+                {
+                  "key": "phone",
+                  "value": "9000000003"
+                }
+              ]
+            },
+            "description": "Customer 80001003 has RX5999 with axis 87°/92°: valid, with warnings for the optometrist to confirm."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Lens matrix + cart",
+      "description": "Must 2: build a cart; lenses are validated against the prescription.",
+      "item": [
+        {
+          "name": "Lens options for the customer's Rx",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/catalog/lenses?phone={{phone}}&rx_id=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "catalog",
+                "lenses"
+              ],
+              "query": [
+                {
+                  "key": "phone",
+                  "value": "{{phone}}"
+                },
+                {
+                  "key": "rx_id",
+                  "value": "",
+                  "description": "optional, e.g. RX5007"
+                }
+              ]
+            },
+            "description": "All 52 lens variants (type × index × coating), each `valid` or not with `reasons`. `rx_id` is optional (defaults to the Rx in force)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create cart",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/carts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "carts"
+              ]
+            },
+            "description": "Creates a cart for the customer at a store. `staffId` must be on that store's roster. `channel`: walk_in | whatsapp_booked | online_pickup (default walk_in).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{phone}}\",\n  \"storeCode\": \"{{storeCode}}\",\n  \"staffId\": \"{{staffId}}\",\n  \"channel\": \"whatsapp_booked\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"cartId\", pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Add pair: frame + lens",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/carts/{{cartId}}/pairs",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "carts",
+                "{{cartId}}",
+                "pairs"
+              ]
+            },
+            "description": "Adds a pair. Either id may be omitted (frame-only, or lens-only on the customer's own frame). `rxId` is optional; the Rx in force is used. Checks: lens fits the Rx, frame in stock at this store (counting the cart), frame takes Rx lenses, product not archived.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"frameVariantId\": \"{{frameVariantId}}\",\n  \"lensVariantId\": \"{{lensVariantId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"pair 1\", () => pm.expect(pm.response.json().pairs[0].pairRef).to.eql(\"1\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Add pair: frame only (to remove next)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/carts/{{cartId}}/pairs",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "carts",
+                "{{cartId}}",
+                "pairs"
+              ]
+            },
+            "description": "A second, frame-only pair (FR-0005), removed by the next request.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"frameVariantId\": \"91000005\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201\", () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Remove pair 2",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/carts/{{cartId}}/pairs/2",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "carts",
+                "{{cartId}}",
+                "pairs",
+                "2"
+              ]
+            },
+            "description": "Removes a pair by its `pairRef`. Pair numbers are never reused."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"one pair left\", () => pm.expect(pm.response.json().pairs).to.have.length(1));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get cart",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/carts/{{cartId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "carts",
+                "{{cartId}}"
+              ]
+            },
+            "description": "The cart as saved (carts survive a restart)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Offers + GST (quote)",
+      "description": "Must 3 and 4: offers applied by their rules, then GST per line by HSN.",
+      "item": [
+        {
+          "name": "Quote",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/carts/{{cartId}}/quote",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "carts",
+                "{{cartId}}",
+                "quote"
+              ]
+            },
+            "description": "Per line: MRP, discount, net, GST rate, taxable value, CGST, SGST. `appliedOffers` with how each was split across lines; `offerEvaluations` gives every offer a one-line reason. For Karthik's cart: ₹1,800 off (FREE_BLUECUT_PGX + PRIORITY500 + BUNDLE300), payable ₹18,697.00."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const t = pm.response.json().totals;",
+                  "pm.test(\"reconciles\", () => pm.expect(t.taxablePaise + t.taxPaise).to.eql(t.payablePaise));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Manager discount: set (store manager)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/carts/{{cartId}}/manager-discount",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "carts",
+                "{{cartId}}",
+                "manager-discount"
+              ]
+            },
+            "description": "Approver must be a store manager at this store; `reasonCode` from config/reason_codes.json (WALKOUT_SAVE, PRICE_MATCH, SERVICE_RECOVERY, LOYALTY_GOODWILL); `bps` up to 1000 (10%). It is non-stackable, so it only applies if it beats the other offers; check the quote. Audited.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"approverId\": \"{{managerId}}\",\n  \"reasonCode\": \"WALKOUT_SAVE\",\n  \"bps\": 500\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Quote (with manager discount)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/carts/{{cartId}}/quote",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "carts",
+                "{{cartId}}",
+                "quote"
+              ]
+            },
+            "description": "See MANAGER_OVERRIDE in offerEvaluations: 5% (₹1,024.85) loses to the ₹1,800 combination."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Manager discount: clear",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/carts/{{cartId}}/manager-discount",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "carts",
+                "{{cartId}}",
+                "manager-discount"
+              ]
+            },
+            "description": "Removes it (audited)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Checkout + bills",
+      "description": "Must 5: charge the terminal, then create the order in Shopify.",
+      "item": [
+        {
+          "name": "Checkout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/carts/{{cartId}}/checkout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "carts",
+                "{{cartId}}",
+                "checkout"
+              ]
+            },
+            "description": "`paymentMethod`: upi | card | cash. Takes the next gapless invoice number for the store, charges the terminal (order_ref = invoice no; cash skips it), creates the Shopify order. 201 POSTED; 202 if payment is unconfirmed (NUMBERED) or Shopify has not confirmed (CHARGED_NOT_POSTED); 402 if declined (CANCELLED).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"paymentMethod\": \"upi\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201\", () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.collectionVariables.set(\"invoiceNo\", b.invoiceNo);",
+                  "pm.collectionVariables.set(\"invoiceNoEnc\", encodeURIComponent(b.invoiceNo));",
+                  "pm.collectionVariables.set(\"shopifyOrderId\", b.shopify.orderId);",
+                  "pm.test(\"posted\", () => pm.expect(b.status).to.eql(\"POSTED\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Checkout again (idempotent)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/carts/{{cartId}}/checkout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "carts",
+                "{{cartId}}",
+                "checkout"
+              ]
+            },
+            "description": "Same cart again (a retry after a Wi-Fi blip): returns the same bill. No second charge, no second Shopify order.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"paymentMethod\": \"upi\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"same invoice\", () => pm.expect(pm.response.json().invoiceNo).to.eql(pm.collectionVariables.get(\"invoiceNo\")));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get bill",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/bills/{{invoiceNoEnc}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "bills",
+                "{{invoiceNoEnc}}"
+              ]
+            },
+            "description": "The bill with lines, tax, offers, payment and Shopify reference. Invoice number URL-encoded."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Resume bill",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/bills/{{invoiceNoEnc}}/resume",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "bills",
+                "{{invoiceNoEnc}}",
+                "resume"
+              ]
+            },
+            "description": "Continues a bill from wherever it stopped (unconfirmed payment: retries with the same order_ref; paid-not-posted: looks up then posts). Harmless on a POSTED bill."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cancel bill (only unpaid)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/bills/{{invoiceNoEnc}}/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "bills",
+                "{{invoiceNoEnc}}",
+                "cancel"
+              ]
+            },
+            "description": "Cancels a NUMBERED (unpaid) bill; the number stays in the series as cancelled and the cart reopens. On a paid bill this returns 409 BILL_NOT_CANCELLABLE (as here).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"staffId\": \"{{managerId}}\",\n  \"reason\": \"customer left before paying\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"code\", () => pm.expect(pm.response.json().code).to.eql(\"BILL_NOT_CANCELLABLE\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5. Refunds",
+      "description": "Must 6: full refund through Shopify's refund flow.",
+      "item": [
+        {
+          "name": "Full refund",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/bills/{{invoiceNoEnc}}/refund",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "bills",
+                "{{invoiceNoEnc}}",
+                "refund"
+              ]
+            },
+            "description": "`reasonCode`: CHANGED_MIND | DEFECTIVE | WRONG_RX | NON_ADAPTATION. Credit note from the store's CN series; tax reversed per line as invoiced; frame restocked at the billing store, lens not restocked; money back on the terminal (or cash), then the Shopify refund against the sale. Asking again returns the same credit note.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"staffId\": \"{{managerId}}\",\n  \"reasonCode\": \"CHANGED_MIND\",\n  \"note\": \"customer changed their mind\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201\", () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.collectionVariables.set(\"creditNoteNo\", b.creditNoteNo);",
+                  "pm.collectionVariables.set(\"creditNoteNoEnc\", encodeURIComponent(b.creditNoteNo));",
+                  "pm.test(\"posted\", () => pm.expect(b.status).to.eql(\"POSTED\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Refunds for a bill",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/bills/{{invoiceNoEnc}}/refunds",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "bills",
+                "{{invoiceNoEnc}}",
+                "refunds"
+              ]
+            },
+            "description": "All credit notes against the invoice."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get credit note",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/credit-notes/{{creditNoteNoEnc}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "credit-notes",
+                "{{creditNoteNoEnc}}"
+              ]
+            },
+            "description": "The credit note, line by line."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Resume credit note",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/credit-notes/{{creditNoteNoEnc}}/resume",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "credit-notes",
+                "{{creditNoteNoEnc}}",
+                "resume"
+              ]
+            },
+            "description": "Continues a refund from wherever it stopped (checks what the terminal already refunded before paying out). Harmless when POSTED."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "6. Day-end",
+      "description": "Must 7: day-end for a store and date, from Shopify, reconciled against the till.",
+      "item": [
+        {
+          "name": "Day-end: today",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reports/day-end?store={{storeCode}}&date={{today}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reports",
+                "day-end"
+              ],
+              "query": [
+                {
+                  "key": "store",
+                  "value": "{{storeCode}}"
+                },
+                {
+                  "key": "date",
+                  "value": "{{today}}"
+                }
+              ]
+            },
+            "description": "Bills, gross, discounts, taxable, CGST/SGST, refunds (counted on the refund date), net, split by payment method and channel, discounts by offer, invoice range, and `reconciliation` (errors vs info). `date` defaults to today (IST)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"matched\", () => pm.expect(pm.response.json().reconciliation.status).to.eql(\"matched\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Day-end: seed JN 2026-10-06",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reports/day-end?store=JN&date=2026-10-06",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reports",
+                "day-end"
+              ],
+              "query": [
+                {
+                  "key": "store",
+                  "value": "JN"
+                },
+                {
+                  "key": "date",
+                  "value": "2026-10-06"
+                }
+              ]
+            },
+            "description": "Old-POS bills: 3 bills, cash ₹14,496 (matches till_sessions_sample.json). Listed as info NOT_FROM_THIS_TILL."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Day-end: seed HSR 2026-10-12 (refund only)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reports/day-end?store=HSR&date=2026-10-12",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reports",
+                "day-end"
+              ],
+              "query": [
+                {
+                  "key": "store",
+                  "value": "HSR"
+                },
+                {
+                  "key": "date",
+                  "value": "2026-10-12"
+                }
+              ]
+            },
+            "description": "No bills, but #1007's refund (billed 10-09) lands on the refund date."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "7. Error examples",
+      "description": "What staff see when something is not allowed. Each returns {code, message, details}.",
+      "item": [
+        {
+          "name": "400 INVALID_PHONE",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/customers?phone=12345",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customers"
+              ],
+              "query": [
+                {
+                  "key": "phone",
+                  "value": "12345"
+                }
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 400\", () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "404 CUSTOMER_NOT_FOUND",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/customers?phone=9000000099",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customers"
+              ],
+              "query": [
+                {
+                  "key": "phone",
+                  "value": "9000000099"
+                }
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 404\", () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create cart for RX5026 (SPH -5.25)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/carts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "carts"
+              ]
+            },
+            "description": "Sets up the next two error examples.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"9000000017\",\n  \"storeCode\": \"HSR\",\n  \"staffId\": \"{{staffId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"errCartId\", pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 LENS_RX_MISMATCH (SV 1.56 for -5.25)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/carts/{{errCartId}}/pairs",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "carts",
+                "{{errCartId}}",
+                "pairs"
+              ]
+            },
+            "description": "Message names the eye, value and range, and suggests the indexes that would work.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"lensVariantId\": \"91000045\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 422\", () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "409 OUT_OF_STOCK (FR-0009 at HSR)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/carts/{{errCartId}}/pairs",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "carts",
+                "{{errCartId}}",
+                "pairs"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"frameVariantId\": \"91000009\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 409\", () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 FRAME_NOT_RX_ABLE (sunglasses + lens)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/carts/{{errCartId}}/pairs",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "carts",
+                "{{errCartId}}",
+                "pairs"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"frameVariantId\": \"91000004\",\n  \"lensVariantId\": \"91000049\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 422\", () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 ITEM_NOT_SELLABLE (archived frame)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/carts/{{errCartId}}/pairs",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "carts",
+                "{{errCartId}}",
+                "pairs"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"frameVariantId\": \"91000040\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 422\", () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 MANUAL_DISCOUNT_INVALID (sales staff approving)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/carts/{{errCartId}}/manager-discount",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "carts",
+                "{{errCartId}}",
+                "manager-discount"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"approverId\": \"{{staffId}}\",\n  \"reasonCode\": \"WALKOUT_SAVE\",\n  \"bps\": 1000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 422\", () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "403 STAFF_NOT_AT_STORE",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/carts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "carts"
+              ]
+            },
+            "description": "S101 works at Mantri Mall, not HSR.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{phone}}\",\n  \"storeCode\": \"HSR\",\n  \"staffId\": \"S101\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 403\", () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Add a frame to the error cart",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/carts/{{errCartId}}/pairs",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "carts",
+                "{{errCartId}}",
+                "pairs"
+              ]
+            },
+            "description": "Sets up a small cash bill for the refund error below.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"frameVariantId\": \"91000002\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201\", () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Checkout the error cart (cash)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/carts/{{errCartId}}/checkout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "carts",
+                "{{errCartId}}",
+                "checkout"
+              ]
+            },
+            "description": "Cash skips the terminal; the bill is POSTED with chargeId null.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"paymentMethod\": \"cash\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"errInvoiceNoEnc\", encodeURIComponent(pm.response.json().invoiceNo));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "409 REFUND_NOT_ALLOWED (bad reason code)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/bills/{{errInvoiceNoEnc}}/refund",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "bills",
+                "{{errInvoiceNoEnc}}",
+                "refund"
+              ]
+            },
+            "description": "Unknown reason code; the message lists the valid ones. No credit note number is used.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"staffId\": \"{{managerId}}\",\n  \"reasonCode\": \"BORED\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 409\", () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "404 STORE_NOT_FOUND (day-end)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reports/day-end?store=XX",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reports",
+                "day-end"
+              ],
+              "query": [
+                {
+                  "key": "store",
+                  "value": "XX"
+                }
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 404\", () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "8. Mock read-backs (Shopify)",
+      "description": "Look at what the till wrote, directly in the Shopify mock (:8787). Not part of the till's API.",
+      "item": [
+        {
+          "name": "Shopify: order created by checkout",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{mockUrl}}/admin/api/2026-10/orders/{{shopifyOrderId}}.json",
+              "host": [
+                "{{mockUrl}}"
+              ],
+              "path": [
+                "admin",
+                "api",
+                "2026-10",
+                "orders",
+                "{{shopifyOrderId}}.json"
+              ]
+            },
+            "description": "note_attributes (invoice_no, store, channel, staff, payment method), tax_lines per line, discount_applications/allocations, Rx properties on the lens line, sale transaction, refunds."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Shopify: FR-0003 stock at HSR",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{mockUrl}}/admin/api/2026-10/inventory_levels.json?inventory_item_ids=92000003&location_ids=70000002",
+              "host": [
+                "{{mockUrl}}"
+              ],
+              "path": [
+                "admin",
+                "api",
+                "2026-10",
+                "inventory_levels.json"
+              ],
+              "query": [
+                {
+                  "key": "inventory_item_ids",
+                  "value": "92000003"
+                },
+                {
+                  "key": "location_ids",
+                  "value": "70000002"
+                }
+              ]
+            },
+            "description": "Down by one after checkout, back after the refund."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Store tool: prescriptions by phone",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{mockUrl}}/smt/prescriptions?phone=%2B919000000005",
+              "host": [
+                "{{mockUrl}}"
+              ],
+              "path": [
+                "smt",
+                "prescriptions"
+              ],
+              "query": [
+                {
+                  "key": "phone",
+                  "value": "%2B919000000005"
+                }
+              ]
+            },
+            "description": "Raw store-tool response, newest first."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
