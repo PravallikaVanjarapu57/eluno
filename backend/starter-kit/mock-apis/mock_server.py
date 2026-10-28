@@ -6,6 +6,7 @@
 
 1. Shopify Admin REST shape, base /admin/api/2026-10  (the system of record)
    GET  customers/search.json?query=phone:%2B919000000005
+   POST customers.json {"customer": {first_name, last_name, phone, email?}} -> 201, or 422 {errors:{phone:["has already been taken"]}}
    GET  locations.json
    GET  products.json?product_type=Frame|Lens&limit=250        GET products/{id}.json   GET variants/{id}.json
    GET  inventory_levels.json?inventory_item_ids=1,2&location_ids=3
@@ -130,6 +131,17 @@ class H(BaseHTTPRequestHandler):
         if not p.startswith(API): return self._err(404, "Not Found")
         if FLAKE and random.random() < 0.1: return self._send(429, {"errors": "Exceeded 2 calls per second for api client. Reduce request rates to resume uninterrupted service."}, {"Retry-After": "1.0"})
         r = p[len(API):]
+        if r == "customers.json":
+            # Shopify: phone must be unique (422 "has already been taken"); needs a name, email or phone.
+            c = b.get("customer") or {}
+            phone = c.get("phone")
+            if phone and not re.match(r"^\+[1-9]\d{7,14}$", phone): return self._send(422, {"errors": {"phone": ["is invalid"]}})
+            if not (c.get("first_name") or c.get("last_name") or c.get("email") or phone): return self._send(422, {"errors": {"base": ["Customer must have a name, phone or email"]}})
+            if phone and any(x["phone"] == phone for x in S["customers"]): return self._send(422, {"errors": {"phone": ["has already been taken"]}})
+            cust = {"id": nid(), "first_name": c.get("first_name"), "last_name": c.get("last_name"), "phone": phone, "email": c.get("email"),
+                    "tags": c.get("tags") or "", "total_spent": "0.00", "orders_count": 0, "accepts_marketing": bool(c.get("accepts_marketing", False)),
+                    "state": "enabled", "created_at": now(), "note": c.get("note"), "default_address": None}
+            S["customers"].append(cust); return self._send(201, {"customer": cust})
         if r == "inventory_levels/adjust.json" or r == "inventory_levels/set.json":
             k = (int(b.get("inventory_item_id", 0)), int(b.get("location_id", 0))); row = S["inventory"].get(k)
             if not row: return self._err(404, "inventory level not found for that item/location")

@@ -4,6 +4,8 @@ import { normalizeIndianMobile } from "../domain/phone.js";
 import { selectPrescription, type RxSelection } from "../domain/prescription.js";
 import type { Clock, CustomerDirectory, PrescriptionSource } from "../ports/index.js";
 
+const RX_UNAVAILABLE = "Store tool is not responding; prescriptions cannot be loaded right now. Lens billing is blocked until it is back.";
+
 export type PrescriptionLookup = RxSelection | { status: "unavailable"; reason: string };
 
 export interface CustomerLookup {
@@ -31,7 +33,7 @@ export class LookupCustomer {
     ]);
 
     if (found.length === 0) {
-      throw new DomainError("CUSTOMER_NOT_FOUND", `No customer with phone ${phone}. Create them in Shopify first.`, { phone });
+      throw new DomainError("CUSTOMER_NOT_FOUND", `No customer with phone ${phone}. Create the customer first.`, { phone });
     }
     if (found.length > 1) {
       throw new DomainError("CUSTOMER_AMBIGUOUS", `${found.length} customers share phone ${phone}. Merge them in Shopify before billing.`, {
@@ -44,8 +46,20 @@ export class LookupCustomer {
     // The store tool being down must not hide the customer: frames and sunglasses can still be billed.
     const prescription: PrescriptionLookup = rxs.ok
       ? selectPrescription(customer.id, rxs.list, this.clock.today())
-      : { status: "unavailable", reason: "Store tool is not responding; prescriptions cannot be loaded right now. Lens billing is blocked until it is back." };
+      : { status: "unavailable", reason: RX_UNAVAILABLE };
 
     return { customer, flags: flagsOf(customer), prescription };
   }
+
+  /** The billing view of a customer we already hold (e.g. one just created, whose search index may lag). */
+  async forCustomer(customer: Customer): Promise<CustomerLookup> {
+    let prescription: PrescriptionLookup;
+    try {
+      prescription = selectPrescription(customer.id, await this.prescriptions.listByPhone(customer.phone), this.clock.today());
+    } catch {
+      prescription = { status: "unavailable", reason: RX_UNAVAILABLE };
+    }
+    return { customer, flags: flagsOf(customer), prescription };
+  }
 }
+

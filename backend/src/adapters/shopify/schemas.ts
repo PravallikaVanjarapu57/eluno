@@ -11,6 +11,7 @@ export const ShopifyCustomerSchema = z.object({
   total_spent: z.string(),
   orders_count: z.number().int(),
 });
+export const CustomerResponseSchema = z.object({ customer: ShopifyCustomerSchema });
 export const CustomerSearchResponseSchema = z.object({ customers: z.array(ShopifyCustomerSchema) });
 
 const FrameMetaSchema = z.object({

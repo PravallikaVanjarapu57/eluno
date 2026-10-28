@@ -15,6 +15,7 @@ import { DayEnd } from "./application/dayEnd.js";
 import { SqliteCreditNoteRepository } from "./adapters/sqlite/creditNoteRepo.js";
 import { systemClock } from "./adapters/clock.js";
 import { Reference } from "./application/reference.js";
+import { CreateCustomer } from "./application/createCustomer.js";
 import { LookupCustomer } from "./application/lookupCustomer.js";
 import { Carts } from "./application/carts.js";
 import { TaxTable } from "./domain/tax.js";
@@ -49,6 +50,7 @@ export function compose(env: Env): AppDeps {
     config,
     db,
     lookupCustomer,
+    createCustomer: new CreateCustomer({ customers: shopify, lookup: lookupCustomer, audit, clock }),
     carts: new Carts({
       lookup: lookupCustomer,
       prescriptions: smt,

@@ -16,6 +16,27 @@ export interface CustomerDirectory {
   findByPhone(phone: string): Promise<Customer[]>;
 }
 
+export interface NewCustomer {
+  /** E.164, already normalised. */
+  phone: string;
+  firstName: string;
+  lastName: string;
+  email?: string;
+}
+
+/** Creating a customer in the system of record. */
+export interface CustomerRegistry {
+  /** Throws CustomerAlreadyExists when the phone is taken, CustomerRejected for other refusals. */
+  createCustomer(input: NewCustomer): Promise<Customer>;
+}
+
+/** The system of record already has a customer with this phone (also how a lost create race shows up). */
+export class CustomerAlreadyExists extends Error { }
+/** The create may or may not have happened (timeout, 5xx): look the phone up before deciding anything. */
+export class CustomerOutcomeUnknown extends Error { }
+/** The system of record refused the customer data; retrying unchanged will not help. */
+export class CustomerRejected extends Error { }
+
 export interface PrescriptionSource {
   listByPhone(phone: string): Promise<Prescription[]>;
 }

@@ -3,7 +3,7 @@ import type { Customer } from "../../domain/customer.js";
 import type { Store } from "../../domain/store.js";
 import type { Bill, PostedOrder } from "../../domain/bill.js";
 import { parseInvoiceSeq } from "../../domain/bill.js";
-import { OrderOutcomeUnknown, OrderRejected, type Catalog, type CustomerDirectory, type FrameListing, type OrderSink, type SalesLedger, type StockLevels, type StoreDirectory, type StoreListing } from "../../ports/index.js";
+import { CustomerAlreadyExists, CustomerOutcomeUnknown, CustomerRejected, OrderOutcomeUnknown, OrderRejected, type Catalog, type CustomerDirectory, type CustomerRegistry, type FrameListing, type NewCustomer, type OrderSink, type SalesLedger, type StockLevels, type StoreDirectory, type StoreListing } from "../../ports/index.js";
 import { AmbiguousWriteError, HttpError, parseUpstream, RetriesExhaustedError, type HttpClient } from "../http/client.js";
 import type { CreditNote } from "../../domain/refund.js";
 import type { Paise } from "../../domain/money.js";
@@ -12,6 +12,7 @@ import type { LedgerOrder } from "../../domain/dayEnd.js";
 import { noteAttr, toLedgerOrder, toPostedOrder, toRefundCalculate, toShopifyOrder, toShopifyRefund } from "./orderMapper.js";
 import { toCatalogItem, toCustomer, toStore } from "./mapper.js";
 import {
+  CustomerResponseSchema,
   CustomerSearchResponseSchema,
   InventoryLevelsResponseSchema,
   LocationsResponseSchema,
@@ -38,7 +39,7 @@ class Memo<T> {
 }
 
 /** Shopify Admin REST adapter. The only place in the codebase that knows Shopify's shapes. */
-export class ShopifyGateway implements CustomerDirectory, Catalog, StockLevels, StoreDirectory, StoreListing, FrameListing, OrderSink, SalesLedger {
+export class ShopifyGateway implements CustomerDirectory, CustomerRegistry, Catalog, StockLevels, StoreDirectory, StoreListing, FrameListing, OrderSink, SalesLedger {
   private readonly lenses = new Memo<LensItem[]>(5 * 60_000);
   private readonly locations = new Memo<Store[]>(10 * 60_000);
   private readonly frames = new Memo<{ item: CatalogItem; inventoryItemId: number | null }[]>(5 * 60_000);
@@ -84,6 +85,22 @@ export class ShopifyGateway implements CustomerDirectory, Catalog, StockLevels, 
     const res = await this.http.get("inventory_levels.json", { inventory_item_ids: item, location_ids: store.locationRef });
     const { inventory_levels } = parseUpstream("shopify", "inventory levels", InventoryLevelsResponseSchema, res.body);
     return inventory_levels[0]?.available ?? 0;
+  }
+
+  async createCustomer(input: NewCustomer): Promise<Customer> {
+    try {
+      const res = await this.http.post("customers.json", {
+        customer: { first_name: input.firstName, last_name: input.lastName, phone: input.phone, ...(input.email ? { email: input.email } : {}), accepts_marketing: false },
+      });
+      return toCustomer(parseUpstream("shopify", "customer", CustomerResponseSchema, res.body).customer);
+    } catch (e) {
+      if (e instanceof AmbiguousWriteError || e instanceof RetriesExhaustedError) throw new CustomerOutcomeUnknown(e.message);
+      if (e instanceof HttpError && e.status === 422 && JSON.stringify(e.body).includes("has already been taken")) {
+        throw new CustomerAlreadyExists(`Shopify already has a customer with phone ${input.phone}.`);
+      }
+      if (e instanceof HttpError && e.status >= 400 && e.status < 500) throw new CustomerRejected(`Shopify refused the customer: ${JSON.stringify(e.body)}`);
+      throw e;
+    }
   }
 
   async listStores(): Promise<Store[]> {

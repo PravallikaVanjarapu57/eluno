@@ -4,6 +4,7 @@ import path from "node:path";
 import type { PosConfig } from "../config/load.js";
 import type { Db } from "../adapters/sqlite/db.js";
 import type { LookupCustomer } from "../application/lookupCustomer.js";
+import type { CreateCustomer } from "../application/createCustomer.js";
 import type { Carts } from "../application/carts.js";
 import type { Checkout } from "../application/checkout.js";
 import type { Refunds } from "../application/refunds.js";
@@ -21,6 +22,7 @@ export interface AppDeps {
   config: PosConfig;
   db: Db;
   lookupCustomer: LookupCustomer;
+  createCustomer: CreateCustomer;
   carts: Carts;
   checkout: Checkout;
   refunds: Refunds;
@@ -52,7 +54,7 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): express.Expr
     });
   });
 
-  api.use("/customers", customerRoutes(deps.lookupCustomer));
+  api.use("/customers", customerRoutes(deps.lookupCustomer, deps.createCustomer));
   api.use("/carts", cartRoutes(deps.carts));
   api.use("/carts", checkoutRoute(deps.checkout));
   api.use(refundRoutes(deps.refunds));
