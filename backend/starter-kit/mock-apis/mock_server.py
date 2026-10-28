@@ -34,6 +34,12 @@
    POST /terminal/charges {amount_paise, method, order_ref}    -> 201 {charge_id, status:"captured"} or 503 once, retry
    GET  /terminal/charges/{id}                                 -> idempotent status
    POST /terminal/refunds {charge_id, amount_paise, reason}
+Failure injection (development only; this is a test double, not part of the till API):
+   random : the default "flaky" mode (omit --no-flake): ~10% of Shopify (/admin/api) writes return 429 (Retry-After: 1.0), and a first POST /terminal/charges
+            for an order_ref returns 503 about 30% of the time. The generator is seeded (random.seed(7)), so a clean start with the same request order repeats.
+   scripted: --fail MODE:PATH:COUNT (repeatable) makes the next COUNT POST/PUT requests whose path contains PATH fail, in order, then behave normally.
+            MODE is an HTTP status (e.g. 429, 503) answered BEFORE the request is processed, or "drop": the request IS processed, then the connection is closed
+            without an answer (the write happened but the caller cannot know). Example: --fail 503:terminal/charges:10 --fail drop:orders.json:1
 State is in memory; restart = reset to the seed.
 """
 import json, os, sys, random, argparse, re
@@ -46,6 +52,7 @@ L = lambda n: json.load(open(os.path.join(HERE, "..", "data", n)))
 API = "/admin/api/2026-10/"
 random.seed(7)
 FLAKE = True
+RULES = []  # scripted failures from --fail, see the header
 
 S = {
     "customers": L("customers.json"), "locations": L("locations.json"), "products": L("products.json"),
@@ -62,6 +69,11 @@ def money(p): return f"{'-' if p < 0 else ''}{abs(p) // 100}.{abs(p) % 100:02d}"
 
 class H(BaseHTTPRequestHandler):
     def _send(self, code, body, extra=None):
+        if getattr(self, "_drop", False):
+            self.close_connection = True
+            try: self.connection.shutdown(2)
+            except OSError: pass
+            return
         b = json.dumps(body).encode(); self.send_response(code)
         self.send_header("Content-Type", "application/json; charset=utf-8"); self.send_header("Content-Length", str(len(b)))
         S["seq"]["calls"] = (S["seq"]["calls"] + 1) % 40; self.send_header("X-Shopify-Shop-Api-Call-Limit", f"{S['seq']['calls']}/40")
@@ -86,7 +98,23 @@ class H(BaseHTTPRequestHandler):
         return sorted(hits, key=lambda c: c["id"])[:limit]
 
     # ------------------------------------------------------------ PUT
+    def _scripted(self):
+        """Apply the next matching --fail rule. Returns True when the request was answered (or dropped) here."""
+        path = urlparse(self.path).path
+        for rule in RULES:
+            if rule["left"] > 0 and rule["path"] in path:
+                rule["left"] -= 1
+                sys.stderr.write(f"  [scripted failure] {rule['mode']} on {self.command} {path} ({rule['left']} more)\n")
+                if rule["mode"] == "drop":
+                    self._drop = True  # process normally, then close the connection instead of answering
+                    return False
+                extra = {"Retry-After": "1.0"} if rule["mode"] == "429" else None
+                self._send(int(rule["mode"]), {"errors": f"scripted failure {rule['mode']}"}, extra)
+                return True
+        return False
+
     def do_PUT(self):
+        if self._scripted(): return
         p = urlparse(self.path).path; b = self._body()
         if b is None: return self._err(400, "invalid JSON")
         if not p.startswith(API): return self._err(404, "Not Found")
@@ -164,6 +192,7 @@ class H(BaseHTTPRequestHandler):
 
     # ------------------------------------------------------------ POST
     def do_POST(self):
+        if self._scripted(): return
         p = urlparse(self.path).path; b = self._body()
         if b is None: return self._err(400, "invalid JSON")
         if p == "/smt/prescriptions":
@@ -191,6 +220,9 @@ class H(BaseHTTPRequestHandler):
             key = b.get("order_ref")
             if FLAKE and key and key not in S["charges"] and random.random() < 0.3 and not S["charges"].get("_flaked_" + str(key)):
                 S["charges"]["_flaked_" + str(key)] = True; return self._send(503, {"error": "terminal timeout, retry with the same order_ref"})
+            # Idempotent on order_ref, as the till's terminal adapter assumes: the same order_ref again returns the charge already captured.
+            again = next((x for x in S["charges"].values() if isinstance(x, dict) and key and x.get("order_ref") == key), None)
+            if again: return self._send(200, again)
             cid = "chg_" + str(nid()); c = {"charge_id": cid, "status": "captured", "amount_paise": amt, "method": b.get("method", "upi"), "order_ref": key, "refunded_paise": 0, "captured_at": now()}
             S["charges"][cid] = c; return self._send(201, c)
         if p == "/terminal/refunds":
@@ -315,6 +347,13 @@ class H(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(); ap.add_argument("--port", type=int, default=8787); ap.add_argument("--no-flake", action="store_true")
+    ap.add_argument("--fail", action="append", default=[], metavar="MODE:PATH:COUNT", help="scripted failure, repeatable (see the header)")
     a = ap.parse_args(); FLAKE = not a.no_flake
+    for spec in a.fail:
+        try:
+            mode, path, count = spec.split(":"); assert mode == "drop" or (mode.isdigit() and 400 <= int(mode) <= 599) and path and int(count) > 0
+        except (ValueError, AssertionError): ap.error(f"bad --fail {spec!r}: expected MODE:PATH:COUNT, MODE a 4xx/5xx status or 'drop'")
+        RULES.append({"mode": mode, "path": path, "left": int(count)})
+    if RULES: print("scripted failures: " + ", ".join(f"{r['mode']} x{r['left']} on *{r['path']}*" for r in RULES))
     print(f"mock Shopify Admin + SMT + terminal on http://localhost:{a.port}  (flaky 429/503: {'off' if a.no_flake else 'on'})")
     HTTPServer(("0.0.0.0", a.port), H).serve_forever()

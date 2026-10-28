@@ -2,6 +2,7 @@
 // the API pointed at it. To run against real systems instead, set SHOPIFY_BASE_URL etc. and use `npm run api`.
 //   npm start            mock without random 429/503
 //   npm run start:flaky  mock with production-like 429/503
+//   MOCK_FAIL=...        scripted, deterministic failures (mock only; see starter-kit/mock-apis/mock_server.py)
 import { spawn, type ChildProcess } from "node:child_process";
 import { resetDbFiles } from "./resetDb.js";
 
@@ -49,6 +50,8 @@ if (await mockIsUp()) {
 } else {
   const args = ["starter-kit/mock-apis/mock_server.py", "--port", String(MOCK_PORT)];
   if (!flaky) args.push("--no-flake");
+  // MOCK_FAIL="503:terminal/charges:10,drop:orders.json:1" scripts failures deterministically (see docs/DEMO_GUIDE.md).
+  for (const rule of (process.env.MOCK_FAIL ?? "").split(",").map((r) => r.trim()).filter(Boolean)) args.push("--fail", rule);
   const pythonBin = process.env.PYTHON ?? (process.platform === "win32" ? "python" : "python3");
   // We own an in-memory mock, so a leftover till database would disagree with it (hosted demo: TILL_RESET_DB=1).
   const removed = resetDbFiles(process.env.DB_PATH ?? "data/till.db", process.env.TILL_RESET_DB === "1");

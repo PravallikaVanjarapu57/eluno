@@ -4,7 +4,7 @@ A browser/tablet till that replaces Shopify POS. Shopify stays the system of rec
 
 ```
 backend/    Express + TypeScript till API: domain rules, Shopify/store-tool/terminal adapters, SQLite, tests, the starter-kit mock
-frontend/   React + TypeScript + Vite UI: New sale, Refunds, Day-end
+frontend/   React + TypeScript + Vite UI: New sale, Customers, Refunds, Day-end
 Dockerfile  one container: API + built UI on one origin, mock beside it
 ```
 
@@ -18,7 +18,7 @@ Needs Node.js 20+ and Python 3 (for the supplied mock).
 
 ```bash
 ./dev.sh            # mock :8787 + API :3000 + Vite UI :5173   ->  open http://localhost:5173
-./dev.sh --flaky    # same, with the mock returning random 429s and terminal 503s
+./dev.sh --flaky    # same, with the mock returning seeded-random 429s and terminal 503s (see docs/DEMO_GUIDE.md)
 ```
 
 Or by hand, in three terminals:
@@ -30,6 +30,14 @@ cd frontend && npm ci && npm run dev        # UI on :5173, proxies /api -> http:
 
 Single-origin (what production does): `cd frontend && npm ci && npm run build`, then `cd backend && npm start` and open
 http://localhost:3000. The API serves `frontend/dist` (`FRONTEND_DIR`, default `../frontend/dist`) and then lives only under `/api`.
+
+## AI Tools and Engineering Decisions
+
+I built this with Claude Code, and it sped me up most on the careful, repetitive work: reading the existing code and finding gaps, sketching the React components, drafting tests for failure paths, and writing documentation. I decided the architecture, the role rules and what counts as a safe retry, and I am responsible for what ships. Claude Code also ran the Render deployment steps, at my direction.
+
+It was wrong in ways that only running things exposed. The first checkout let a double click create two Shopify orders; a race test caught it. A refund resume could skip its safety check. "Latest prescription" turned out not to mean "the one to bill", because the seed has future-dated ones. While writing the failure guide I found that the mock terminal did not actually dedupe by `order_ref`, although the till relies on that; I fixed the mock. Everything here talks to mocks, not real Shopify or a payment terminal, and I only trust what I ran: tests, a browser, and logs.
+
+A step-by-step demo and the failure-recovery walkthrough are in [`docs/DEMO_GUIDE.md`](docs/DEMO_GUIDE.md).
 
 ## Signing in (demo accounts)
 

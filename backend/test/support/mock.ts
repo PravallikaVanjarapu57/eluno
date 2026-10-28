@@ -1,9 +1,10 @@
 import { spawn, type ChildProcess } from "node:child_process";
 
 /** Starts the starter-kit mock on its own port for a test file; state is fresh each time. */
-export async function startMock(port: number, { flaky = false } = {}): Promise<{ baseUrl: string; stop: () => void }> {
+export async function startMock(port: number, { flaky = false, fail = [] as string[] } = {}): Promise<{ baseUrl: string; stop: () => void }> {
   const args = ["starter-kit/mock-apis/mock_server.py", "--port", String(port)];
   if (!flaky) args.push("--no-flake");
+  for (const f of fail) args.push("--fail", f);
   const pythonBin = process.env.PYTHON ?? (process.platform === "win32" ? "python" : "python3");
   const proc: ChildProcess = spawn(pythonBin, args, { stdio: "ignore" });
   const baseUrl = `http://localhost:${port}`;
