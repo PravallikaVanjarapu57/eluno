@@ -69,8 +69,8 @@ tfoot td { font-weight: 700; border-bottom: 0; }
 .scroll { overflow-x: auto; }
 .row { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; } .row-strong { font-weight: 700; font-size: 1.15rem; border-top: 2px solid var(--ink); margin-top: 6px; padding-top: 8px; }
 
-.picker { display: grid; gap: 8px; max-height: 360px; overflow: auto; padding-right: 4px; }
-.item { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; text-align: left; width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: #fff; font-weight: 500; min-height: 56px; }
+.picker { display: grid; gap: 8px; max-height: 360px; overflow: auto; padding-right: 4px; grid-auto-rows: max-content; align-content: start; }
+.item { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; text-align: left; width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: #fff; font-weight: 500; min-height: 56px; height: auto; }
 .item.selected { border-color: var(--brand); background: var(--info-bg); box-shadow: inset 0 0 0 1px var(--brand); }
 .item.invalid { background: #fafafa; color: #667085; }
 .item small { grid-column: 1 / -1; }
