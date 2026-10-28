@@ -1,6 +1,7 @@
 import type { ErrorRequestHandler } from "express";
 import { ZodError, z } from "zod";
 import { DomainError, type DomainErrorCode } from "../domain/errors.js";
+import { CustomerOutcomeUnknown } from "../ports/index.js";
 import { AmbiguousWriteError, HttpError, RetriesExhaustedError, UpstreamShapeError } from "../adapters/http/client.js";
 
 const STATUS: Record<DomainErrorCode, number> = {
@@ -54,6 +55,11 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
   if (err instanceof HttpError || err instanceof RetriesExhaustedError || err instanceof AmbiguousWriteError) {
     console.error(err.message);
     res.status(502).json({ code: "UPSTREAM_UNAVAILABLE", message: "An upstream system (Shopify, store tool or terminal) is not responding. Try again." });
+    return;
+  }
+  if (err instanceof CustomerOutcomeUnknown) {
+    console.error(err.message);
+    res.status(502).json({ code: "UPSTREAM_UNAVAILABLE", message: "Shopify did not confirm the new customer. Look the phone number up before trying again: they may already have been created." });
     return;
   }
   if (err instanceof UpstreamShapeError) {

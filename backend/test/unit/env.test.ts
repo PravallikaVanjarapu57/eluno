@@ -1,6 +1,25 @@
 import { describe, expect, it } from "vitest";
 import { describeUpstreams, envWarnings, loadEnv } from "../../src/config/env.js";
 
+describe("loadEnv: authentication settings", () => {
+  it("session cookies are Secure by default in production and not in development", () => {
+    expect(loadEnv({ NODE_ENV: "production" }).COOKIE_SECURE).toBe(true);
+    expect(loadEnv({}).COOKIE_SECURE).toBe(false);
+    expect(loadEnv({ NODE_ENV: "production", COOKIE_SECURE: "0" }).COOKIE_SECURE).toBe(false);
+    expect(loadEnv({ COOKIE_SECURE: "1" }).COOKIE_SECURE).toBe(true);
+  });
+
+  it("the demo password must be long enough, and an empty value means not set", () => {
+    expect(() => loadEnv({ AUTH_DEMO_PASSWORD: "short" })).toThrow();
+    expect(loadEnv({ AUTH_DEMO_PASSWORD: "" }).AUTH_DEMO_PASSWORD).toBeUndefined();
+    expect(loadEnv({ AUTH_DEMO_PASSWORD: "a-long-enough-password" }).AUTH_DEMO_PASSWORD).toBe("a-long-enough-password");
+  });
+
+  it("describeUpstreams never prints the demo password", () => {
+    expect(describeUpstreams(loadEnv({ AUTH_DEMO_PASSWORD: "a-long-enough-password" }))).not.toContain("a-long-enough-password");
+  });
+});
+
 describe("loadEnv", () => {
   it("defaults to the starter-kit mock for all three upstreams", () => {
     const env = loadEnv({});
