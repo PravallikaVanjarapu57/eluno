@@ -59,6 +59,13 @@ export class Checkout {
     return bill;
   }
 
+  /** The cart's live (not cancelled) bill, if checkout got far enough to number one. Lets a client recover after a lost response. */
+  forCart(cartId: string): Bill {
+    const bill = this.d.bills.liveForCart(cartId);
+    if (!bill) throw new DomainError("BILL_NOT_FOUND", `Cart ${cartId} has no bill: nothing was charged.`, { cartId });
+    return bill;
+  }
+
   /** Most recent bills for a store, newest first; lets a refund screen pick an invoice without typing it. */
   recent(storeCode: string, limit: number): Bill[] {
     return this.d.bills

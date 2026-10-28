@@ -81,6 +81,11 @@ describe("recent bills and the /api prefix", () => {
       expect(res.status).toBe(200);
       expect(res.body[0]).toMatchObject({ invoiceNo: paid.body.invoiceNo, status: "POSTED", paymentMethod: "cash", payablePaise: paid.body.totals.payablePaise });
     }
+    expect((await request(app).get(`/carts/${cart}/bill`)).body.invoiceNo).toBe(paid.body.invoiceNo);
+    const empty = (await request(app).post("/carts").send({ phone: "9000000005", storeCode: "HSR", staffId: "S105" })).body.id;
+    const none = await request(app).get(`/carts/${empty}/bill`);
+    expect(none.status).toBe(404);
+    expect(none.body.code).toBe("BILL_NOT_FOUND");
     expect((await request(app).get("/bills")).status).toBe(400);
     expect((await request(app).get("/api/health")).body.ok).toBe(true);
     expect((await request(app).get("/api/health")).headers["cache-control"]).toBe("no-store");

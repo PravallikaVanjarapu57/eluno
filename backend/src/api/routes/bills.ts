@@ -48,6 +48,10 @@ export function checkoutRoute(checkout: Checkout): Router {
     const bill = await checkout.checkout(req.params.id, paymentMethod);
     res.status(statusCode(bill)).json(billView(bill));
   });
+  // GET /carts/:id/bill -> the cart's live bill, or 404 BILL_NOT_FOUND when checkout never numbered one
+  r.get("/:id/bill", (req, res) => {
+    res.json(billView(checkout.forCart(req.params.id)));
+  });
   return r;
 }
 
