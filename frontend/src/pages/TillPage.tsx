@@ -12,8 +12,7 @@ import { NewCustomer } from "../components/NewCustomer";
 import { useAuth } from "../state/auth";
 import { useSession } from "../state/session";
 
-interface SavedSale { cartId: string; phone: string }
-const SAVED = "eluno.sale";
+import { SAVED, type SavedSale } from "./StartSalePage";
 
 export default function TillPage() {
   const { storeCode, store, stores } = useSession();
@@ -35,7 +34,16 @@ export default function TillPage() {
     let live = true;
     (async () => {
       try {
-        const [c, l] = await Promise.all([api.cart(saved.cartId), api.customer(saved.phone)]);
+        const [c, l0] = await Promise.all([api.cart(saved.cartId), api.customer(saved.phone)]);
+        if (!live) return;
+        // A sale started from the customer's profile is made to the prescription staff picked there, not whichever is newest.
+        let l = l0;
+        if (c.selectedRxId) {
+          try {
+            const picked = await api.prescription(c.customer.id, c.selectedRxId);
+            l = { ...l0, prescription: { status: "valid", rx: picked.rx, warnings: picked.warnings, skipped: [] } };
+          } catch { /* keep the default view; the server still bills the selected one */ }
+        }
         if (!live) return;
         setCart(c);
         setLookup(l);

@@ -48,7 +48,7 @@ export interface RequestOptions {
   signal?: AbortSignal;
 }
 
-export async function request<T>(method: "GET" | "POST" | "PUT" | "DELETE", path: string, opts: RequestOptions = {}): Promise<ApiResult<T>> {
+export async function request<T>(method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE", path: string, opts: RequestOptions = {}): Promise<ApiResult<T>> {
   const maxAttempts = method === "GET" ? 1 + (opts.retries ?? 3) : 1;
   let last: ApiError | null = null;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {

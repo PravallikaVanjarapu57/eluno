@@ -3,6 +3,10 @@ import { useAuth } from "./state/auth";
 import { SessionProvider, useSession } from "./state/session";
 import LoginPage from "./pages/LoginPage";
 import TillPage from "./pages/TillPage";
+import CustomersPage from "./pages/CustomersPage";
+import CustomerProfilePage from "./pages/CustomerProfilePage";
+import { AddPrescriptionPage, EditCustomerPage, NewCustomerPage } from "./pages/CustomerFormPages";
+import StartSalePage from "./pages/StartSalePage";
 import RefundsPage from "./pages/RefundsPage";
 import DayEndPage from "./pages/DayEndPage";
 import { Banner, ErrorBanner, Pill, Spinner } from "./components/ui";
@@ -38,6 +42,7 @@ function Shell() {
         <span className="brand">Eluno Till</span>
         <nav className="nav">
           <NavLink to="/" end>New sale</NavLink>
+          {can("customer:view") && <NavLink to="/customers">Customers</NavLink>}
           <NavLink to="/refunds">Refunds</NavLink>
           {can("report:view") && <NavLink to="/day-end">Day-end</NavLink>}
         </nav>
@@ -48,6 +53,16 @@ function Shell() {
       <main>
         <Routes>
           <Route path="/" element={<TillPage />} />
+          {can("customer:view") && (
+            <>
+              <Route path="/customers" element={<CustomersPage />} />
+              <Route path="/customers/new" element={<NewCustomerPage />} />
+              <Route path="/customers/:id" element={<CustomerProfilePage />} />
+              <Route path="/customers/:id/edit" element={<EditCustomerPage />} />
+              <Route path="/customers/:id/prescriptions/new" element={<AddPrescriptionPage />} />
+              <Route path="/customers/:id/sale" element={<StartSalePage />} />
+            </>
+          )}
           <Route path="/refunds" element={<RefundsPage />} />
           <Route path="/day-end" element={<DayEndPage />} />
           <Route path="*" element={<div className="page"><Banner tone="info" title="Page not found" /></div>} />

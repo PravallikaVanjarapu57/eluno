@@ -11,7 +11,7 @@ export const CHANNELS: { value: Channel; label: string }[] = [
 ];
 
 export type Role = "salesperson" | "store_manager";
-export type Permission = "customer:create" | "billing:use" | "refund:create" | "discount:manager" | "report:view" | "report:download";
+export type Permission = "customer:view" | "customer:create" | "customer:update" | "prescription:create" | "billing:use" | "refund:create" | "discount:manager" | "report:view" | "report:download";
 /** The signed-in user as the server describes them. Permissions only drive what the UI shows; the server enforces them. */
 export interface User { username: string; staffId: string; name: string; role: Role; storeCodes: string[]; permissions: Permission[] }
 export interface Session { user: User; csrfToken: string }
@@ -35,7 +35,7 @@ export type PrescriptionLookup =
   | { status: "none_on_file"; reason: string; skipped: SkippedRx[] }
   | { status: "unavailable"; reason: string };
 
-export interface Customer { id: string; firstName: string; lastName: string; phone: string; tags: string[]; lifetimeSpendPaise: Paise; ordersCount: number }
+export interface Customer { id: string; firstName: string; lastName: string; phone: string; email?: string | null; tags: string[]; lifetimeSpendPaise: Paise; ordersCount: number }
 export interface CustomerLookup { customer: Customer; flags: { priority: boolean; family: boolean; campaigns: string[] }; prescription: PrescriptionLookup }
 
 export interface LensOption {
@@ -50,6 +50,7 @@ export interface CartPair {
 }
 export interface Cart {
   id: string; status: string; storeCode: string; staffId: string; channel: Channel;
+  selectedRxId: string | null; rxSelection: "explicit" | null;
   customer: { id: string; name: string; phone: string; tags: string[] };
   pairs: CartPair[]; manualDiscount: { approverId: string; reasonCode: string; bps: number } | null; mrpTotalPaise: Paise;
 }
@@ -99,4 +100,19 @@ export interface DayEndReport {
   discountsByOffer: Record<string, Paise>;
   invoices: { first: string | null; last: string | null; cancelled: string[] };
   reconciliation: { status: "matched" | "mismatch"; mismatches: Mismatch[] };
+}
+
+// ---- customer management
+export type RxStatus = "valid" | "expired" | "future_dated";
+export interface RxView { rx: Prescription; status: RxStatus; warnings: string[]; eligible: boolean; reason: string | null }
+export interface RxSummary { count: number; latest: { rxId: string; testedOn: string; validUntil: string; status: RxStatus } | null }
+export interface CustomerFlags { priority: boolean; family: boolean; campaigns: string[] }
+export interface CustomerRow { customer: Customer; flags: CustomerFlags; /** null: the store tool did not answer */ prescriptions: RxSummary | null }
+export interface CustomerPage { items: CustomerRow[]; nextCursor: string | null }
+export interface CustomerView { customer: Customer; name: string; flags: CustomerFlags }
+export interface CustomerBill { invoiceNo: string; status: BillStatus; storeCode: string; invoiceDate: string; createdAt: string; payablePaise: Paise }
+export interface EyeEntry { sph?: number; cyl?: number; axis?: number | null; add?: number | null }
+export interface NewPrescriptionBody {
+  clientRef?: string; testedOn: string; validUntil?: string; od: EyeEntry; os: EyeEntry;
+  pd?: { binocular?: number | null; monoR?: number | null; monoL?: number | null }; notes?: string | null;
 }

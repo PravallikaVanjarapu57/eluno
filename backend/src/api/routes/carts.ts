@@ -38,6 +38,8 @@ export function cartView(cart: Cart) {
     staffId: cart.staffId,
     channel: cart.channel,
     selectedRxId: cart.selectedRxId ?? null,
+    /** "explicit" when the sale was started from a customer profile: with several prescriptions in force, staff must pick one. */
+    rxSelection: cart.rxSelection ?? null,
     customer: { id: cart.customer.id, name: `${cart.customer.firstName} ${cart.customer.lastName}`.trim(), phone: cart.customer.phone, tags: cart.customer.tags },
     pairs: cart.pairs.map((p) => ({
       pairRef: p.pairRef,

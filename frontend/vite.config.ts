@@ -8,5 +8,5 @@ const API = process.env.VITE_API_TARGET ?? "http://localhost:3000";
 export default defineConfig({
   plugins: [react()],
   server: { port: 5173, proxy: { "/api": { target: API, changeOrigin: false } } },
-  test: { environment: "node", include: ["src/**/*.test.ts"] },
+  test: { environment: "node", include: ["src/**/*.test.{ts,tsx}"], setupFiles: ["src/test-setup.ts"] },
 });

@@ -60,12 +60,12 @@ export function Card({ title, actions, children, className = "" }: { title?: Rea
   );
 }
 
-export function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+export function Field({ label, hint, error, children }: { label: string; hint?: string; error?: string | undefined; children: ReactNode }) {
   return (
     <label className="field">
       <span>{label}</span>
       {children}
-      {hint && <small className="muted">{hint}</small>}
+      {error ? <small className="field-error" role="alert">{error}</small> : hint && <small className="muted">{hint}</small>}
     </label>
   );
 }

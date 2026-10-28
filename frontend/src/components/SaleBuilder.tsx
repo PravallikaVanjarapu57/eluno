@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api/endpoints";
 import { ApiError } from "../api/client";
@@ -18,6 +19,11 @@ export function SaleBuilder({ cart, lookup, onCart, onBill }: {
   return (
     <div className="grid-2">
       <div className="stack">
+        {cart.rxSelection === "explicit" && (
+          cart.selectedRxId
+            ? <div className="small"><Link to={`/customers/${cart.customer.id}/sale`}>Change prescription</Link></div>
+            : lookup.prescription.status === "valid" && <Banner tone="warn" title="Choose the prescription" actions={<Link className="btn primary" to={`/customers/${cart.customer.id}/sale`}>Choose prescription</Link>}>Lenses are made to a prescription you pick on the customer's sale page.</Banner>
+        )}
         <PrescriptionCard rx={lookup.prescription} />
         <ItemPicker cart={cart} lookup={lookup} onCart={onCart} />
       </div>
@@ -53,10 +59,11 @@ function ItemPicker({ cart, lookup, onCart }: { cart: Cart; lookup: CustomerLook
   const rxStatus = lookup.prescription.status;
   const loadLenses = useCallback(() => {
     if (rxStatus !== "valid") return;
+    if (cart.rxSelection === "explicit" && !cart.selectedRxId) return; // nothing chosen yet: do not guess which prescription to match
     setMatrixErr(null);
     setMatrix(null);
-    api.lenses(lookup.customer.phone).then(setMatrix).catch(setMatrixErr);
-  }, [lookup.customer.phone, rxStatus]);
+    api.lenses(lookup.customer.phone, cart.selectedRxId).then(setMatrix).catch(setMatrixErr);
+  }, [lookup.customer.phone, rxStatus, cart.rxSelection, cart.selectedRxId]);
   useEffect(loadLenses, [loadLenses]);
 
   const shown = useMemo(() => {
