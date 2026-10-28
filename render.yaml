@@ -1,3 +1,4 @@
+# NOTE: this Blueprint needs a Git-connected repository. Without Git, deploy the Docker image as an image-backed service (see README).
 # Render blueprint: a single free web service (Docker) serving the UI and the API on one origin.
 # The mock and the SQLite file live in the container's ephemeral disk and reset together on restart/redeploy.
 services:

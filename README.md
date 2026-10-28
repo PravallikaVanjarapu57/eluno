@@ -55,12 +55,28 @@ cd frontend && npm test && npm run typecheck && npm run build
 
 ## Deploy (free tier)
 
-`render.yaml` + `Dockerfile` describe one free web service: the API serves the UI at `/` and the API at `/api`, and the mock runs
-inside the same container. Constraints to know:
+The `Dockerfile` builds one image: the API serves the UI at `/` and the API at `/api`, with the mock running beside it.
+Verified locally (`docker build`, run with `PORT=10000`, lookup → checkout → refund → day-end, UI and `/api/health`), for both
+`linux/arm64` and `linux/amd64`. **Render runs amd64**, so build for it explicitly:
 
-- **State is ephemeral.** The till's SQLite file and the mock's in-memory Shopify both live in the container, so they reset together
-  when the instance sleeps/restarts/redeploys (which is what keeps invoice numbers and Shopify consistent). A restart means a fresh demo.
+```bash
+docker buildx build --platform linux/amd64 -t <registry>/<user>/eluno-till:latest --push .
+```
+
+**Without connecting a Git repository**, Render's documented route is an *image-backed* web service: Render pulls a prebuilt
+image from a container registry on each deploy (Dashboard: New → Web Service → *Existing Image*; API: `POST /v1/services`
+with `image.imagePath` and `serviceDetails.runtime: "image"`). Render has no documented way to upload local source or a local
+image, so a registry (Docker Hub, GHCR, …) is required; a private one also needs a Render registry credential.
+`render.yaml` is a Git-based Blueprint and is **not** used by that route. Note the image contains the full source: make a pushed image
+public only if that is acceptable. Not yet deployed.
+
+Constraints of a free instance:
+
+- **State is ephemeral and resets together.** The till's SQLite file and the mock's in-memory Shopify live in the container.
+  The container sets `TILL_RESET_DB=1`, so each start begins with an empty database *and* a fresh mock; otherwise a restart that
+  kept the disk would leave bills the mock no longer has (day-end would show `MISSING_IN_SHOPIFY`). A free instance also sleeps
+  after 15 idle minutes (~1 min to wake), which resets the demo.
 - **Single instance only**: the one-driver-per-bill guard is in-process. Do not scale out.
 - **No authentication.** Anyone with the URL can bill and refund against the mock. Acceptable for a demo; not for real Shopify.
-- Set `MOCK_FLAKE=1` to make the mock return random 429/503 for failure testing.
+- Set `MOCK_FLAKE=1` to make the mock return random 429/503 for failure testing. Render sets `PORT` itself.
 - Real Shopify would need `SHOPIFY_BASE_URL`, `SHOPIFY_ACCESS_TOKEN`, `SMT_BASE_URL`, `TERMINAL_BASE_URL` (server-side only) and order pagination (see backend README).
