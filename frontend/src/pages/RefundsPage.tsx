@@ -2,14 +2,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api } from "../api/endpoints";
 import { ApiError } from "../api/client";
-import type { Bill, BillSummary, CreditNote, Staff } from "../api/types";
+import type { Bill, BillSummary, CreditNote } from "../api/types";
 import { BillLines, BillTotals, billTone, creditTone } from "../components/BillParts";
 import { Banner, Card, ErrorBanner, Field, Pill, Row, Spinner } from "../components/ui";
 import { dateTime, label, money, ratePct } from "../lib/format";
+import { useAuth } from "../state/auth";
 import { useSession } from "../state/session";
 
 export default function RefundsPage() {
-  const { storeCode, staffId, reasonCodes } = useSession();
+  const { storeCode, reasonCodes } = useSession();
   const [params, setParams] = useSearchParams();
   const [invoice, setInvoice] = useState(params.get("invoice") ?? "");
   const [bill, setBill] = useState<Bill | null>(null);
@@ -56,7 +57,7 @@ export default function RefundsPage() {
       </Card>
 
       {loading && <Spinner label="Loading the bill and its refunds…" />}
-      {bill && notes && <RefundPanel key={bill.invoiceNo} bill={bill} notes={notes} defaultStaffId={staffId} reasons={reasonCodes?.refund ?? []} onChange={() => open(bill.invoiceNo)} />}
+      {bill && notes && <RefundPanel key={bill.invoiceNo} bill={bill} notes={notes} reasons={reasonCodes?.refund ?? []} onChange={() => open(bill.invoiceNo)} />}
     </div>
   );
 }
@@ -87,11 +88,10 @@ function RecentBills({ storeCode, onPick }: { storeCode: string; onPick(no: stri
 
 const ACTIVE = new Set(["NUMBERED", "REFUNDED", "REFUNDED_NOT_POSTED"]);
 
-function RefundPanel({ bill, notes, defaultStaffId, reasons, onChange }: {
-  bill: Bill; notes: CreditNote[]; defaultStaffId: string; reasons: { code: string; label: string }[]; onChange(): void;
+function RefundPanel({ bill, notes, reasons, onChange }: {
+  bill: Bill; notes: CreditNote[]; reasons: { code: string; label: string }[]; onChange(): void;
 }) {
-  const [roster, setRoster] = useState<Staff[] | null>(null);
-  const [staffId, setStaffId] = useState("");
+  const { user } = useAuth();
   const [reason, setReason] = useState("");
   const [note, setNote] = useState("");
   const [confirming, setConfirming] = useState(false);
@@ -100,10 +100,6 @@ function RefundPanel({ bill, notes, defaultStaffId, reasons, onChange }: {
   const [result, setResult] = useState<CreditNote | null>(null);
   const [lost, setLost] = useState(false);
   const inflight = useRef(false);
-
-  useEffect(() => {
-    api.staff(bill.store).then((s) => { setRoster(s); if (s.some((x) => x.staffId === defaultStaffId)) setStaffId(defaultStaffId); }).catch(setError);
-  }, [bill.store, defaultStaffId]);
 
   const live = result && ACTIVE.has(result.status) ? result : notes.find((n) => ACTIVE.has(n.status)) ?? null;
   const done = result?.status === "POSTED" ? result : notes.find((n) => n.status === "POSTED") ?? null;
@@ -117,7 +113,7 @@ function RefundPanel({ bill, notes, defaultStaffId, reasons, onChange }: {
     setError(null);
     setLost(false);
     try {
-      const r = await api.refund(bill.invoiceNo, { staffId, reasonCode: reason, ...(note.trim() ? { note: note.trim() } : {}) });
+      const r = await api.refund(bill.invoiceNo, { reasonCode: reason, ...(note.trim() ? { note: note.trim() } : {}) });
       setResult(r.data);
     } catch (e) {
       setError(e);
@@ -166,8 +162,8 @@ function RefundPanel({ bill, notes, defaultStaffId, reasons, onChange }: {
       {refundable && (
         <Card title="3 · Refund in full">
           <div className="fields">
-            <Field label="Refund processed by">
-              <select value={staffId} onChange={(e) => setStaffId(e.target.value)} disabled={!roster}><option value="">Select staff…</option>{roster?.map((s) => <option key={s.staffId} value={s.staffId}>{s.name} ({s.staffId})</option>)}</select>
+            <Field label="Refund processed by" hint="Recorded from your sign-in">
+              <input readOnly value={user ? `${user.name} (${user.staffId})` : ""} />
             </Field>
             <Field label="Reason">
               <select value={reason} onChange={(e) => setReason(e.target.value)}><option value="">Select reason…</option>{reasons.map((r) => <option key={r.code} value={r.code}>{r.label}</option>)}</select>
@@ -181,7 +177,7 @@ function RefundPanel({ bill, notes, defaultStaffId, reasons, onChange }: {
               This cannot be undone. {bill.invoiceNo} will be refunded completely.
             </Banner>
           ) : (
-            <button className="danger big" disabled={!staffId || !reason || busy} onClick={() => setConfirming(true)}>{busy ? "Refunding…" : "Review full refund…"}</button>
+            <button className="danger big" disabled={!reason || busy} onClick={() => setConfirming(true)}>{busy ? "Refunding…" : "Review full refund…"}</button>
           )}
           {busy && <Spinner label="Returning the money and recording it in Shopify…" />}
         </Card>

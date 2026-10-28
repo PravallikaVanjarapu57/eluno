@@ -3,6 +3,8 @@
 # Open http://localhost:5173 (Vite proxies /api to the API, so there is no CORS to configure).
 #   ./dev.sh           reliable mock
 #   ./dev.sh --flaky   mock returns random 429s and terminal 503s
+# Sign-in: usernames are lower-case staff ids (s105 salesperson, s108 store manager at HSR, ...). Set AUTH_DEMO_PASSWORD
+# (12+ chars) in your shell to choose the password; otherwise a random one is printed in the backend output once per run.
 set -euo pipefail
 cd "$(dirname "$0")"
 command -v node >/dev/null || { echo "Node.js 20+ is required"; exit 1; }

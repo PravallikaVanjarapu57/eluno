@@ -4,9 +4,20 @@ import { ApiError } from "../api/client";
 import type { DayEndReport } from "../api/types";
 import { Banner, Card, ErrorBanner, Field, Pill, Spinner } from "../components/ui";
 import { label, money, todayIST } from "../lib/format";
+import { useAuth } from "../state/auth";
 import { useSession } from "../state/session";
 
 export default function DayEndPage() {
+  const { can } = useAuth();
+  // Hidden from salespeople in the menu; the server also refuses them. Until the client confirms otherwise, reports are manager-only.
+  if (!can("report:view")) {
+    return <div className="page"><Banner tone="warn" title="Day-end reports are for store managers">Ask your store manager for the day-end report.</Banner></div>;
+  }
+  return <DayEnd />;
+}
+
+function DayEnd() {
+  const { can } = useAuth();
   const { stores, storeCode } = useSession();
   const [store, setStore] = useState(storeCode);
   const [date, setDate] = useState(todayIST());
@@ -14,6 +25,30 @@ export default function DayEndPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const seq = useRef(0);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<unknown>(null);
+
+  async function exportCsv() {
+    if (!report || exporting) return;
+    setExporting(true);
+    setExportError(null);
+    try {
+      // Re-asks the server for the same store and date as the report on screen; the server decides if you may.
+      const { blob, filename } = await api.dayEndCsv(report.storeCode, report.date);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) {
+      setExportError(e);
+    } finally {
+      setExporting(false);
+    }
+  }
 
   useEffect(() => { if (!store && storeCode) setStore(storeCode); }, [storeCode, store]);
 
@@ -44,6 +79,13 @@ export default function DayEndPage() {
         <ErrorBanner error={error} actions={error instanceof ApiError && error.outcomeUnknown ? <button onClick={run}>Retry</button> : undefined} />
         {loading && <Spinner label="Reading orders from Shopify and reconciling with the till…" />}
       </Card>
+      {report && can("report:download") && (
+        <div className="inline no-print">
+          <button className="primary" onClick={exportCsv} disabled={exporting}>{exporting ? "Preparing…" : `Download CSV · ${report.storeCode} ${report.date}`}</button>
+          <span className="small muted">The same figures as this report, as a spreadsheet file.</span>
+        </div>
+      )}
+      <ErrorBanner error={exportError} title="Could not download the report" />
       {report && <Report r={report} />}
     </div>
   );

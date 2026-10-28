@@ -8,18 +8,22 @@ import { SaleBuilder } from "../components/SaleBuilder";
 import { Banner, Card, ErrorBanner, Field, Pill, Spinner } from "../components/ui";
 import { dateTime, money } from "../lib/format";
 import { load, save } from "../lib/storage";
+import { NewCustomer } from "../components/NewCustomer";
+import { useAuth } from "../state/auth";
 import { useSession } from "../state/session";
 
 interface SavedSale { cartId: string; phone: string }
 const SAVED = "eluno.sale";
 
 export default function TillPage() {
-  const { storeCode, staffId, staff, store } = useSession();
+  const { storeCode, store, stores } = useSession();
+  const { user, can } = useAuth();
   const [phone, setPhone] = useState("");
   const [channel, setChannel] = useState<Channel>("walk_in");
   const [lookup, setLookup] = useState<CustomerLookup | null>(null);
   const [cart, setCart] = useState<Cart | null>(null);
   const [bill, setBill] = useState<Bill | null>(null);
+  const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState<"lookup" | "start" | "restore" | null>(() => (load<SavedSale>(SAVED) ? "restore" : null));
   const [error, setError] = useState<unknown>(null);
   const guard = useRef(false);
@@ -77,7 +81,7 @@ export default function TillPage() {
     setBusy("start");
     setError(null);
     try {
-      const c = await api.createCart({ phone: lookup.customer.phone, storeCode, staffId, channel });
+      const c = await api.createCart({ phone: lookup.customer.phone, storeCode, channel });
       save(SAVED, { cartId: c.id, phone: lookup.customer.phone } satisfies SavedSale);
       setCart(c);
     } catch (e) {
@@ -102,7 +106,7 @@ export default function TillPage() {
     return (
       <div className="page">
         <h1>Sale · {cart.customer.name}</h1>
-        <BillStatus bill={bill} staffId={staffId || cart.staffId} onBill={onBill} onNewSale={reset} onBackToCart={backToCart} />
+        <BillStatus bill={bill} onBill={onBill} onNewSale={reset} onBackToCart={backToCart} />
       </div>
     );
   }
@@ -126,18 +130,34 @@ export default function TillPage() {
     );
   }
 
-  const ready = !!storeCode && !!staffId;
+  const ready = !!storeCode;
   return (
     <div className="page">
       <h1>New sale</h1>
-      {!ready && <Banner tone="info" title="Choose a store and who is billing">Use the store and staff selectors at the top of the screen.</Banner>}
+      {!ready && (stores?.length === 0
+        ? <Banner tone="warn" title="No store assigned">Your account is not assigned to a store. Ask a manager.</Banner>
+        : <Banner tone="info" title="Choose a store">Use the store selector at the top of the screen.</Banner>)}
       <Card title="Customer">
         <form className="inline" onSubmit={(e) => { e.preventDefault(); void doLookup(); }}>
           <div style={{ flex: "1 1 240px" }}><Field label="Customer mobile number"><input inputMode="tel" autoFocus placeholder="e.g. 9000000005" value={phone} onChange={(e) => setPhone(e.target.value)} /></Field></div>
           <button className="primary" type="submit" disabled={!phone.trim() || busy === "lookup"} style={{ alignSelf: "flex-end" }}>{busy === "lookup" ? "Looking up…" : "Look up"}</button>
         </form>
-        <ErrorBanner error={error} actions={error instanceof ApiError && error.outcomeUnknown ? <button onClick={doLookup}>Retry</button> : undefined} />
+        {error instanceof ApiError && error.code === "CUSTOMER_NOT_FOUND" && can("customer:create") ? (
+          <Banner tone="info" title="No customer with that number" actions={<button className="primary" onClick={() => { setError(null); setCreating(true); }}>Create this customer</button>}>{error.message}</Banner>
+        ) : (
+          <ErrorBanner error={error} actions={error instanceof ApiError && error.outcomeUnknown ? <button onClick={doLookup}>Retry</button> : undefined} />
+        )}
+        {can("customer:create") && !creating && !lookup && <button className="link" style={{ justifySelf: "start" }} onClick={() => setCreating(true)}>New customer…</button>}
       </Card>
+
+      {creating && (
+        <NewCustomer
+          initialPhone={phone}
+          onCancel={() => setCreating(false)}
+          onUseExisting={(p) => { setCreating(false); setPhone(p); void api.customer(p).then(setLookup).catch(setError); }}
+          onCreated={(c) => { setCreating(false); setError(null); setPhone(c.customer.phone); setLookup(c); }}
+        />
+      )}
 
       {lookup && (
         <>
@@ -154,7 +174,7 @@ export default function TillPage() {
           <Card title="Start the sale">
             <div className="fields">
               <Field label="Store"><input readOnly value={store ? `${store.name} (${store.code})` : storeCode} /></Field>
-              <Field label="Billed by"><input readOnly value={staff?.find((s) => s.staffId === staffId)?.name ?? staffId} /></Field>
+              <Field label="Billed by"><input readOnly value={user?.name ?? ""} /></Field>
               <Field label="Sales channel"><select value={channel} onChange={(e) => setChannel(e.target.value as Channel)}>{CHANNELS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</select></Field>
             </div>
             <button className="primary big" disabled={!ready || busy === "start"} onClick={start}>{busy === "start" ? "Starting…" : "Start sale"}</button>
@@ -173,7 +193,6 @@ function Unfinished({ storeCode }: { storeCode: string }) {
   const [error, setError] = useState<unknown>(null);
   const [open, setOpen] = useState<Bill | null>(null);
   const [openErr, setOpenErr] = useState<unknown>(null);
-  const { staffId } = useSession();
 
   const reload = useCallback(() => {
     setError(null);
@@ -184,7 +203,7 @@ function Unfinished({ storeCode }: { storeCode: string }) {
   if (open) {
     return (
       <Card title="Unfinished bill" actions={<button onClick={() => { setOpen(null); reload(); }}>Close</button>}>
-        <BillStatus bill={open} staffId={staffId} onBill={setOpen} onNewSale={() => { setOpen(null); reload(); }} onBackToCart={() => { setOpen(null); reload(); }} />
+        <BillStatus bill={open} onBill={setOpen} onNewSale={() => { setOpen(null); reload(); }} onBackToCart={() => { setOpen(null); reload(); }} />
       </Card>
     );
   }

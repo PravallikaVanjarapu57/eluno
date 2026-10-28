@@ -10,6 +10,12 @@ export const CHANNELS: { value: Channel; label: string }[] = [
   { value: "online_pickup", label: "Online pickup" },
 ];
 
+export type Role = "salesperson" | "store_manager";
+export type Permission = "customer:create" | "billing:use" | "refund:create" | "discount:manager" | "report:view" | "report:download";
+/** The signed-in user as the server describes them. Permissions only drive what the UI shows; the server enforces them. */
+export interface User { username: string; staffId: string; name: string; role: Role; storeCodes: string[]; permissions: Permission[] }
+export interface Session { user: User; csrfToken: string }
+
 export interface Store { code: string; name: string; invoicePrefix: string }
 export interface Staff { staffId: string; name: string; role: "sales" | "optometrist" | "store_manager"; canOverrideDiscount: boolean }
 export interface ReasonCode { code: string; label: string }

@@ -92,3 +92,10 @@ tfoot td { font-weight: 700; border-bottom: 0; }
 
 a.btn { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 8px 16px; border-radius: 8px; border: 1px solid #c7ccd6; background: #fff; color: var(--ink); text-decoration: none; font-weight: 600; }
 a.btn.big { min-height: 56px; font-size: 1.1rem; }
+
+.login { min-height: 100vh; display: grid; place-items: center; padding: 16px; background: linear-gradient(160deg, #0f1b33, #1f3260); }
+.login-card { width: min(420px, 100%); gap: 14px; }
+.login-brand { color: var(--ink); font-size: 1.3rem; }
+.who { color: #e5ebf7; display: inline-flex; gap: 8px; align-items: center; }
+.who-store { color: #cdd6e8; }
+.topbar .session button { min-height: 40px; }

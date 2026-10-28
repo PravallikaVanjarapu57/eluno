@@ -13,9 +13,8 @@ const POLL_MS = 5000;
  * What happened to a bill after "Charge". Success is shown only when the server says POSTED.
  * Every non-final state offers a deliberate, server-supported recovery action; nothing here re-sends a charge by itself.
  */
-export function BillStatus({ bill, staffId, onBill, onNewSale, onBackToCart }: {
+export function BillStatus({ bill, onBill, onNewSale, onBackToCart }: {
   bill: Bill;
-  staffId: string;
   onBill(b: Bill): void;
   onNewSale(): void;
   onBackToCart(): void;
@@ -55,7 +54,7 @@ export function BillStatus({ bill, staffId, onBill, onNewSale, onBackToCart }: {
   }
   const check = () => run("check", () => api.bill(bill.invoiceNo));
   const resume = () => run("resume", async () => (await api.resumeBill(bill.invoiceNo)).data);
-  const cancel = () => run("cancel", () => api.cancelBill(bill.invoiceNo, staffId, cancelReason.trim()));
+  const cancel = () => run("cancel", () => api.cancelBill(bill.invoiceNo, cancelReason.trim()));
 
   return (
     <div className="stack">

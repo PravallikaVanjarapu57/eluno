@@ -28,6 +28,15 @@ export interface ApiResult<T> {
 }
 
 const BASE = "/api";
+
+// The CSRF token for the signed-in session. Kept in memory only (never localStorage): a page reload fetches it again
+// from /auth/me. The session itself is an HttpOnly cookie that scripts cannot read.
+let csrfToken: string | null = null;
+export const setCsrfToken = (t: string | null) => void (csrfToken = t);
+
+// Called when the server says the session is gone (expired, logged out elsewhere, account disabled).
+let onUnauthorized: (() => void) | null = null;
+export const setUnauthorizedHandler = (fn: (() => void) | null) => void (onUnauthorized = fn);
 const RETRY_STATUS = new Set([429, 502, 503]);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -47,7 +56,12 @@ export async function request<T>(method: "GET" | "POST" | "PUT" | "DELETE", path
     try {
       const res = await fetch(BASE + path, {
         method,
-        headers: opts.body !== undefined ? { "Content-Type": "application/json", Accept: "application/json" } : { Accept: "application/json" },
+        credentials: "same-origin",
+        headers: {
+          Accept: "application/json",
+          ...(opts.body !== undefined ? { "Content-Type": "application/json" } : {}),
+          ...(method !== "GET" && csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
+        },
         ...(opts.body !== undefined ? { body: JSON.stringify(opts.body) } : {}),
         ...(opts.signal ? { signal: opts.signal } : {}),
       });
@@ -59,6 +73,7 @@ export async function request<T>(method: "GET" | "POST" | "PUT" | "DELETE", path
         /* non-JSON body (e.g. a proxy error page) */
       }
       if (res.ok || opts.accept?.includes(res.status)) return { status: res.status, data: json as T };
+      if (res.status === 401 && !path.startsWith("/auth/")) onUnauthorized?.();
       const b = (json ?? {}) as { code?: string; message?: string; details?: unknown };
       last = new ApiError(
         res.status,
@@ -79,6 +94,28 @@ export async function request<T>(method: "GET" | "POST" | "PUT" | "DELETE", path
     }
   }
   throw last ?? new ApiError(0, "NETWORK", "Could not reach the till server.");
+}
+
+/** A file the server generates (the CSV export). Same cookie and error handling as everything else. */
+export async function download(path: string): Promise<{ blob: Blob; filename: string }> {
+  let res: Response;
+  try {
+    res = await fetch(BASE + path, { credentials: "same-origin" });
+  } catch {
+    throw new ApiError(0, "NETWORK", "Could not reach the till server. Check the Wi-Fi connection.");
+  }
+  if (!res.ok) {
+    if (res.status === 401) onUnauthorized?.();
+    let b: { code?: string; message?: string } = {};
+    try {
+      b = (await res.json()) as typeof b;
+    } catch {
+      /* not JSON */
+    }
+    throw new ApiError(res.status, b.code ?? `HTTP_${res.status}`, b.message ?? `The download failed (${res.status}).`);
+  }
+  const name = /filename="?([^";]+)"?/.exec(res.headers.get("content-disposition") ?? "")?.[1];
+  return { blob: await res.blob(), filename: name ?? "report.csv" };
 }
 
 export const get = <T>(path: string, opts?: RequestOptions) => request<T>("GET", path, opts).then((r) => r.data);

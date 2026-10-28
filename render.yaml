@@ -10,3 +10,5 @@ services:
     envVars:
       - key: MOCK_FLAKE   # set to "1" to make the mock return random 429/503, like the live assessment
         value: "0"
+      - key: AUTH_DEMO_PASSWORD   # password for the demo logins (>= 12 chars). Set it in the Render dashboard; never commit it.
+        sync: false

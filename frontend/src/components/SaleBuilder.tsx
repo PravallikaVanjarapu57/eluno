@@ -3,6 +3,7 @@ import { api } from "../api/endpoints";
 import { ApiError } from "../api/client";
 import { PAYMENT_METHODS, type Bill, type Cart, type CustomerLookup, type Frame, type LensMatrix, type LensOption, type PaymentMethod, type Quote } from "../api/types";
 import { label, money, ratePct } from "../lib/format";
+import { useAuth } from "../state/auth";
 import { useSession } from "../state/session";
 import { PrescriptionCard } from "./PrescriptionCard";
 import { Banner, Card, ErrorBanner, Field, Pill, Spinner } from "./ui";
@@ -265,9 +266,8 @@ function QuoteView({ quote, loading, error, onRetry }: { quote: Quote | null; lo
 }
 
 function ManagerDiscount({ cart, onCart }: { cart: Cart; onCart(c: Cart): void }) {
-  const { staff, reasonCodes } = useSession();
-  const managers = (staff ?? []).filter((s) => s.canOverrideDiscount);
-  const [approver, setApprover] = useState("");
+  const { reasonCodes } = useSession();
+  const { user, can } = useAuth();
   const [reason, setReason] = useState("");
   const [pct, setPct] = useState("5");
   const [busy, setBusy] = useState(false);
@@ -290,27 +290,26 @@ function ManagerDiscount({ cart, onCart }: { cart: Cart; onCart(c: Cart): void }
     }
   }
   const value = Number(pct);
-  const valid = approver && reason && Number.isFinite(value) && value > 0 && value <= 10;
+  const valid = reason && Number.isFinite(value) && value > 0 && value <= 10;
 
   return (
     <Card title="Manager discount" actions={cart.manualDiscount ? <Pill tone="info">Active</Pill> : undefined}>
       {cart.manualDiscount ? (
         <div className="between">
-          <div>{cart.manualDiscount.bps / 100}% approved by <b>{staff?.find((s) => s.staffId === cart.manualDiscount?.approverId)?.name ?? cart.manualDiscount.approverId}</b> · {code?.label ?? cart.manualDiscount.reasonCode}
+          <div>{cart.manualDiscount.bps / 100}% approved by <b>{cart.manualDiscount.approverId === user?.staffId ? user.name : cart.manualDiscount.approverId}</b> · {code?.label ?? cart.manualDiscount.reasonCode}
             <div className="small muted">It only takes effect if it beats the automatic offers (see the offer list above).</div></div>
           <button onClick={() => run(() => api.clearManagerDiscount(cart.id))} disabled={busy}>Remove</button>
         </div>
-      ) : managers.length === 0 ? (
-        <div className="muted small">No store manager is on this store's roster, so a manager discount is not available.</div>
+      ) : !can("discount:manager") ? (
+        <div className="muted small">Only a store manager can give a discount. Ask the manager to sign in on this till and apply it; they approve it with their own login.</div>
       ) : (
         <>
-          <div className="small muted">Up to 10%. A store manager approves it and a reason is recorded.</div>
+          <div className="small muted">Up to 10%. You ({user?.name}) approve it, and a reason is recorded.</div>
           <div className="fields">
-            <Field label="Approved by"><select value={approver} onChange={(e) => setApprover(e.target.value)}><option value="">Select manager…</option>{managers.map((m) => <option key={m.staffId} value={m.staffId}>{m.name} ({m.staffId})</option>)}</select></Field>
             <Field label="Reason"><select value={reason} onChange={(e) => setReason(e.target.value)}><option value="">Select reason…</option>{reasonCodes?.discount.map((r) => <option key={r.code} value={r.code}>{r.label}</option>)}</select></Field>
             <Field label="Discount %"><input type="number" min={0.5} max={10} step={0.5} value={pct} onChange={(e) => setPct(e.target.value)} /></Field>
           </div>
-          <button disabled={!valid || busy} onClick={() => run(() => api.setManagerDiscount(cart.id, { approverId: approver, reasonCode: reason, bps: Math.round(value * 100) }))}>Apply manager discount</button>
+          <button disabled={!valid || busy} onClick={() => run(() => api.setManagerDiscount(cart.id, { reasonCode: reason, bps: Math.round(value * 100) }))}>Apply manager discount</button>
         </>
       )}
       <ErrorBanner error={err} />
