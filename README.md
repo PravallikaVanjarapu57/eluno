@@ -29,16 +29,71 @@ cd frontend && npm ci && npm run dev        # UI on :5173, proxies /api -> http:
 ```
 
 Single-origin (what production does): `cd frontend && npm ci && npm run build`, then `cd backend && npm start` and open
-http://localhost:3000. The API serves `frontend/dist` (`FRONTEND_DIR`, default `../frontend/dist`).
+http://localhost:3000. The API serves `frontend/dist` (`FRONTEND_DIR`, default `../frontend/dist`) and then lives only under `/api`.
 
-Using the UI: choose a store and a staff member at the top (try **HSR**), then **New sale**. Seed customers: `9000000005`
-(priority, valid prescription, progressive lens), `9000000017` (SPH -5.25: some lenses are invalid for them), `9000000000` (expired prescription).
-Refunds take an invoice number like `ELU/HSR/FY26/00003` (or pick a recent bill); the numbers are shown after each sale.
+## Signing in (demo accounts)
+
+Everything except `/api/health` and sign-in requires a session. There is **no sign-up** and no way to create or promote an
+account over HTTP. Accounts are provisioned by the operator when the server starts:
+
+- One login per **salesperson** and **store manager** on the store-tool roster (the mock has 14 + 7), at a store that bills.
+  Identity, role and store come from the roster. **Optometrists have no login**: only two roles are approved.
+- The username is the lower-case staff id (`s105` salesperson at HSR, `s108` store manager at HSR, `s109` / `s112` at BR, ...).
+- The password is supplied at run time and is never in the repository:
+  - **Local:** if `AUTH_DEMO_PASSWORD` is unset, `npm start` generates a random password and prints it **once** in the backend
+    output (`demo password for this run`). Or choose your own: `AUTH_DEMO_PASSWORD='at-least-12-chars' ./dev.sh`.
+  - **Production** (`NODE_ENV=production`): `AUTH_DEMO_PASSWORD` is required, otherwise no account exists and nobody can sign in.
+- Re-running with the same password changes nothing; a new password re-hashes the accounts; staff who leave the roster are disabled.
+- **The deployed demo:** its password is the `AUTH_DEMO_PASSWORD` environment variable of the Render service
+  (dashboard → eluno-till → Environment). It is not in this repository, the image, or the logs. Share it with reviewers privately.
+
+| Capability | Salesperson | Store manager |
+|---|---|---|
+| Look up customers, **create customers** | yes | yes |
+| Cart, lens validation, offers, checkout, recover an unpaid bill (own store) | yes | yes |
+| Full refund (own store's bills) | yes\* | yes |
+| Apply a **manager discount** (the signed-in manager is the approver) | **no** | yes |
+| View the **day-end report** on screen | **no**\* | yes (own store) |
+| **Download** the day-end report (CSV) | **no** | yes (own store) |
+| Create or change **lens validation rules** | **no** | **no** (nobody) |
+| Anything in another store | no | no |
+
+Every row is enforced by the API (`backend/src/domain/auth.ts`, `backend/src/api/app.ts`, the route files); the UI only hides what the
+server would refuse. \* = see *Open questions*. Store managers can do everything a salesperson can; a user belongs to one store.
+
+### How it works
+
+- **Sessions:** server-side, in SQLite. Sign-in verifies a **scrypt** hash (never plaintext), then issues a random 256-bit token as an
+  **HttpOnly, SameSite=Strict** cookie (**Secure** and `__Host-` prefixed in production). Only the token's SHA-256 is stored.
+  Idle timeout 2 h, absolute 12 h (`AUTH_IDLE_MINUTES`, `AUTH_MAX_HOURS`). Sign-out deletes the session on the server.
+- **CSRF:** every write needs the session's CSRF token in `X-CSRF-Token` (returned by sign-in and `/auth/me`, held **in memory** by the page,
+  never in localStorage) and a same-site `Origin` when the browser sends one.
+- **Nothing is trusted from the client:** role, staff id, store and approver are read from the session. A `staffId` or `approverId`
+  in a request body is ignored (or must equal the signed-in user). Bills, refunds and the audit log record the signed-in staff.
+- **Brute force:** 5 wrong passwords lock a username for 15 minutes (429 + `Retry-After`). Unknown users cost the same time as wrong passwords.
+- **Responses:** `401` not signed in / session ended, `403` signed in but not allowed (`FORBIDDEN`, `STORE_FORBIDDEN`, `CSRF_INVALID`, `LENS_RULES_LOCKED`).
+
+### Customers and reports
+
+- **New customer** (New sale → *New customer…*, or offered when a lookup finds nobody): `POST /api/customers` through the Shopify adapter.
+  The phone is normalised and must be unique: an existing customer is refused without a write (`409 CUSTOMER_EXISTS`, with *Use existing customer*),
+  two tills creating the same number at once are settled by Shopify's own uniqueness check, and an uncertain write (timeout/5xx) is **never retried
+  blindly**: the UI offers *Check whether they exist*. The new customer can be billed immediately.
+- **Day-end download** (managers): Day-end → *Download CSV* calls `GET /api/reports/day-end.csv?store=&date=`, built from the same report
+  object as the screen (`backend/src/domain/dayEndCsv.ts`), as `eluno-day-end-<store>-<date>.csv`. Columns: `section,item,count,amount_paise,amount_inr,detail`
+  with sections `report, sales, refunds, net, payment_method, channel, discount_by_offer, invoices, mismatch`. A test checks every total
+  and the payment-method breakdown against the JSON report. Text cells starting with `= + - @` are neutralised against spreadsheet formula injection.
+
+## Using the UI
+
+Sign in (above), then **New sale**. Seed customers: `9000000005` (priority, valid prescription, progressive lens), `9000000017` (SPH -5.25: some lenses
+are invalid for them), `9000000000` (expired prescription), or create your own. Refunds take an invoice number like `ELU/HSR/FY26/00003`
+(or pick a recent bill); the numbers are shown after each sale. Managers also get **Day-end**.
 
 ## Checks
 
 ```bash
-cd backend  && npm test && npm run typecheck && npm run lint     # 249 tests
+cd backend  && npm test && npm run typecheck && npm run lint
 cd frontend && npm test && npm run typecheck && npm run build
 ```
 
@@ -81,6 +136,31 @@ Constraints of a free instance:
   kept the disk would leave bills the mock no longer has (day-end would show `MISSING_IN_SHOPIFY`). A free instance also sleeps
   after 15 idle minutes (~1 min to wake), which resets the demo.
 - **Single instance only**: the one-driver-per-bill guard is in-process. Do not scale out.
-- **No authentication.** Anyone with the URL can bill and refund against the mock. Acceptable for a demo; not for real Shopify.
+- **Sign-in is required** (see above). Set `AUTH_DEMO_PASSWORD` as a secret environment variable of the service; without it no account exists. `NODE_ENV=production` and `TRUST_PROXY=1` are baked into the image (Secure cookies behind Render's TLS proxy); for plain-HTTP local use of the image add `-e COOKIE_SECURE=0`.
 - Set `MOCK_FLAKE=1` to make the mock return random 429/503 for failure testing. Render sets `PORT` itself.
 - Real Shopify would need `SHOPIFY_BASE_URL`, `SHOPIFY_ACCESS_TOKEN`, `SMT_BASE_URL`, `TERMINAL_BASE_URL` (server-side only) and order pagination (see backend README).
+
+## Mock-only demo security vs production readiness
+
+This is a **demo against a mock**, secured sensibly, not a production identity system.
+
+| Done | Not done / would change for production |
+|---|---|
+| Server-side sessions, scrypt hashes, HttpOnly/Secure/SameSite cookies, CSRF, store scoping, audit of who did what | One shared demo password for all accounts; real staff need individual credentials, a reset flow and ideally SSO/MFA |
+| Login throttling per username | No per-IP limit or CAPTCHA; a lock can be triggered against a username by anyone who can reach the API |
+| Roles read from the roster at provisioning | A role change in the store tool only takes effect on the next provisioning run (restart); no admin screen for users |
+| Single instance, in-memory login throttle | Several instances need a shared throttle and a shared database (the till already assumes one instance) |
+| scrypt cost 2^14 on the free demo (2^15 default) | Use at least the default, tuned to real hardware |
+| HTTPS from Render's edge | The Postman collection predates sign-in and no longer works unauthenticated |
+
+## Open questions for the client
+
+1. **Who administers lens validation rules?** Store manager, an optometry manager or a separate administrator is undecided. Until it is, **no role can
+   create or change them**: the rules live in code/config and every write to the catalogue/config area (`PUT/POST/PATCH/DELETE`, and any `lens-rules` path)
+   returns `403 LENS_RULES_LOCKED` for everyone, including managers. Salespeople only select valid lenses and see the validation errors.
+2. **May salespeople see the day-end report on screen?** Not stated. Conservatively, the on-screen report is manager-only too (`report:view`);
+   this is one line in `backend/src/domain/auth.ts` to change.
+3. **Who may issue refunds?** Unchanged from before: any signed-in staff member at the bill's store, with a reason code, attributed to them.
+   The earlier question to finance (managers only?) is still open.
+4. **Manager discounts** now need the **manager's own sign-in** on the till (they are the approver). Is that acceptable at the counter, or is a manager PIN wanted?
+5. **Optometrists** have no login because only two roles were approved. Do they need one (e.g. to record prescriptions)?
