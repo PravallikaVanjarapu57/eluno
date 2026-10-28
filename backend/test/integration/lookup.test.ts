@@ -57,7 +57,7 @@ describe("GET /customers?phone= against the mock", () => {
 
   it("bad input -> 400", async () => {
     expect((await http.get("/customers").query({ phone: "12" })).body.code).toBe("INVALID_PHONE");
-    expect((await http.get("/customers")).body.code).toBe("BAD_REQUEST");
+    expect((await http.get("/customers").query({ phone: "" })).body.code).toBe("BAD_REQUEST");
   });
 
   it("upstream down -> 502, not a crash", async () => {

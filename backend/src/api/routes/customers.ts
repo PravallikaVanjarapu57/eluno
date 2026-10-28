@@ -5,6 +5,7 @@ import type { CreateCustomer } from "../../application/createCustomer.js";
 import type { LookupCustomer } from "../../application/lookupCustomer.js";
 import type { Customers } from "../../application/customers.js";
 import type { Prescriptions } from "../../application/prescriptions.js";
+import { DomainError } from "../../domain/errors.js";
 import { flagsOf, fullName, type Customer } from "../../domain/customer.js";
 
 const Query = z.object({
@@ -66,9 +67,9 @@ export function customerRoutes(lookup: LookupCustomer, create: CreateCustomer, c
     res.status(201).json(await create.create(body, me(req).staffId));
   });
 
+  // A malformed id cannot be anyone's: answer 404 without asking Shopify.
   r.param("id", (_req, _res, next, value) => {
-    const ok = id.safeParse(value).success;
-    next(ok ? undefined : Object.assign(new Error("bad id"), { notFound: true }));
+    next(id.safeParse(value).success ? undefined : new DomainError("CUSTOMER_NOT_FOUND", "No such customer.", { customerId: String(value).slice(0, 40) }));
   });
 
   r.get("/:id", canView, async (req, res) => {

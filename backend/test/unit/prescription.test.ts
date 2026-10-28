@@ -70,3 +70,29 @@ describe("warningsFor", () => {
     expect(warningsFor(rx("A", "2026-01-01", "2027-01-01", { od: { sph: -1, cyl: -0.5, axis: 90, add: null } }))).toEqual([]);
   });
 });
+
+import { checkNewPrescription, rxStatus } from "../../src/domain/prescription.js";
+
+describe("rxStatus", () => {
+  it("is valid through its last day, expired after, and future_dated before the test", () => {
+    expect(rxStatus({ testedOn: "2025-10-23", validUntil: "2026-10-23" }, TODAY)).toBe("valid");
+    expect(rxStatus({ testedOn: "2025-10-22", validUntil: "2026-10-22" }, TODAY)).toBe("expired");
+    expect(rxStatus({ testedOn: "2026-10-24", validUntil: "2027-10-24" }, TODAY)).toBe("future_dated");
+  });
+});
+
+describe("checkNewPrescription", () => {
+  const ok = { testedOn: "2026-10-23", od: { sph: -1.5, cyl: -0.5, axis: 90 }, os: { sph: 0 } };
+  it("defaults the expiry to a year after the test and stores staff entries as external", () => {
+    const r = checkNewPrescription("C1", ok, TODAY);
+    expect(r).toMatchObject({ ok: true, value: { validUntil: "2027-10-23", source: "external", optometristId: null, od: { sph: -1.5, cyl: -0.5, axis: 90, add: null }, os: { sph: 0, cyl: 0, axis: null } } });
+  });
+  it("handles a leap day when adding a year", () => {
+    expect(checkNewPrescription("C1", { ...ok, testedOn: "2024-02-29" }, TODAY)).toMatchObject({ ok: true, value: { validUntil: "2025-02-28" } });
+  });
+  it("reports every problem at once, by field", () => {
+    const r = checkNewPrescription("C1", { testedOn: "nope", od: { sph: 0.1 }, os: { sph: 1, cyl: -1 } }, TODAY);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(Object.keys(r.fields).sort()).toEqual(["od.sph", "os.axis", "testedOn", "validUntil"].sort());
+  });
+});

@@ -41,6 +41,7 @@ export interface Session {
   get(path: string): request.Test;
   post(path: string): request.Test;
   put(path: string): request.Test;
+  patch(path: string): request.Test;
   delete(path: string): request.Test;
 }
 
@@ -55,6 +56,7 @@ export async function signIn(app: Express, username: string, password = TEST_PAS
     get: (p) => agent.get(p),
     post: (p) => agent.post(p).set("X-CSRF-Token", csrf),
     put: (p) => agent.put(p).set("X-CSRF-Token", csrf),
+    patch: (p) => agent.patch(p).set("X-CSRF-Token", csrf),
     delete: (p) => agent.delete(p).set("X-CSRF-Token", csrf),
   };
 }
