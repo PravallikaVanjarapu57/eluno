@@ -68,7 +68,11 @@ image from a container registry on each deploy (Dashboard: New → Web Service �
 with `image.imagePath` and `serviceDetails.runtime: "image"`). Render has no documented way to upload local source or a local
 image, so a registry (Docker Hub, GHCR, …) is required; a private one also needs a Render registry credential.
 `render.yaml` is a Git-based Blueprint and is **not** used by that route. Note the image contains the full source: make a pushed image
-public only if that is acceptable. Not yet deployed.
+public only if that is acceptable.
+
+**Deployed (demo, mock only):** https://eluno-till.onrender.com — Render free web service `eluno-till`, pulling the public image
+`ghcr.io/pravallikavanjarapu57/eluno-till:latest` (linux/amd64). To redeploy: rebuild and push that tag, then trigger a deploy
+(Render pulls the image on every deploy). The first request after idle takes about a minute.
 
 Constraints of a free instance:
 
