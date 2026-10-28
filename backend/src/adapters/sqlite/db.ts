@@ -103,6 +103,31 @@ const MIGRATIONS: string[] = [
   );
   CREATE UNIQUE INDEX credit_notes_one_live_full_refund ON credit_notes (invoice_no) WHERE scope = 'full' AND status <> 'CANCELLED';
   `,
+  // 6: staff logins and server-side sessions. Passwords are scrypt hashes; session tokens are stored only as SHA-256.
+  `
+  CREATE TABLE users (
+    user_id       TEXT PRIMARY KEY,
+    username      TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    staff_id      TEXT NOT NULL,
+    name          TEXT NOT NULL,
+    role          TEXT NOT NULL CHECK (role IN ('salesperson', 'store_manager')),
+    store_codes   TEXT NOT NULL,
+    active        INTEGER NOT NULL DEFAULT 1,
+    created_at    TEXT NOT NULL,
+    updated_at    TEXT NOT NULL
+  );
+
+  CREATE TABLE sessions (
+    session_hash TEXT PRIMARY KEY,
+    user_id      TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    csrf_token   TEXT NOT NULL,
+    created_at   TEXT NOT NULL,
+    last_seen_at TEXT NOT NULL,
+    expires_at   TEXT NOT NULL
+  );
+  CREATE INDEX sessions_user ON sessions (user_id);
+  `,
 ];
 
 export type Db = Database.Database;

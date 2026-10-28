@@ -1,22 +1,29 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import request from "supertest";
 import type { Express } from "express";
 import { compose } from "../../src/compose.js";
-import { loadEnv } from "../../src/config/env.js";
 import { createApp } from "../../src/api/app.js";
 import { istDate } from "../../src/domain/dayEnd.js";
 import { startMock } from "../support/mock.js";
+import { provisionAll, signIn, testEnv, type Session } from "../support/auth.js";
 
 let mock: Awaited<ReturnType<typeof startMock>>;
 let app: Express;
+let hsrMgr: Session; // S108
+let brSales: Session; // S109, salesperson at BR
+let brMgr: Session; // S112, BR store manager
+const managers: Record<string, Session> = {}; // each store's manager, to read that store's day-end
 beforeAll(async () => {
   mock = await startMock(8796);
-  app = createApp(compose(loadEnv({ SHOPIFY_BASE_URL: mock.baseUrl, DB_PATH: ":memory:", TILL_TODAY: "2026-10-23" })));
+  const deps = compose(testEnv({ SHOPIFY_BASE_URL: mock.baseUrl, TILL_TODAY: "2026-10-23" }));
+  app = createApp(deps);
+  await provisionAll(deps);
+  [hsrMgr, brSales, brMgr] = await Promise.all([signIn(app, "s108"), signIn(app, "s109"), signIn(app, "s112")]);
+  Object.assign(managers, { HSR: hsrMgr, BR: brMgr, JN: await signIn(app, "s120"), IN: await signIn(app, "s124") });
 });
 afterAll(() => mock.stop());
 
 const dayEnd = async (store: string, date: string) => {
-  const res = await request(app).get("/reports/day-end").query({ store, date });
+  const res = await (managers[store] ?? hsrMgr).get("/reports/day-end").query({ store, date });
   expect(res.status).toBe(200);
   return res.body;
 };
@@ -49,16 +56,16 @@ describe("day-end from Shopify (seed orders from the old POS)", () => {
   });
 
   it("unknown store and bad date are refused", async () => {
-    expect((await request(app).get("/reports/day-end").query({ store: "XX", date: "2026-10-06" })).body.code).toBe("STORE_NOT_FOUND");
-    expect((await request(app).get("/reports/day-end").query({ store: "HSR", date: "06-10-2026" })).status).toBe(400);
+    expect((await hsrMgr.get("/reports/day-end").query({ store: "XX", date: "2026-10-06" })).body.code).toBe("STORE_FORBIDDEN"); // not one of their stores
+    expect((await hsrMgr.get("/reports/day-end").query({ store: "HSR", date: "06-10-2026" })).status).toBe(400);
   });
 });
 
 describe("day-end after billing and refunding through this till", () => {
   it("reconciles: bill and refund both appear, the day nets to zero", async () => {
-    const cartId = (await request(app).post("/carts").send({ phone: "9000000005", storeCode: "BR", staffId: "S109" })).body.id;
-    expect((await request(app).post(`/carts/${cartId}/pairs`).send({ frameVariantId: "91000003", lensVariantId: "91000083" })).status).toBe(201);
-    const bill = (await request(app).post(`/carts/${cartId}/checkout`).send({ paymentMethod: "upi" })).body;
+    const cartId = (await brSales.post("/carts").send({ phone: "9000000005", storeCode: "BR" })).body.id;
+    expect((await brSales.post(`/carts/${cartId}/pairs`).send({ frameVariantId: "91000003", lensVariantId: "91000083" })).status).toBe(201);
+    const bill = (await brSales.post(`/carts/${cartId}/checkout`).send({ paymentMethod: "upi" })).body;
     expect(bill.status).toBe("POSTED");
 
     const today = istDate(new Date().toISOString());
@@ -68,7 +75,7 @@ describe("day-end after billing and refunding through this till", () => {
     expect(r.reconciliation).toEqual({ status: "matched", mismatches: [] });
     expect(r.invoices.first).toBe(bill.invoiceNo);
 
-    await request(app).post(`/bills/${encodeURIComponent(bill.invoiceNo)}/refund`).send({ staffId: "S109", reasonCode: "CHANGED_MIND" });
+    await brSales.post(`/bills/${encodeURIComponent(bill.invoiceNo)}/refund`).send({ reasonCode: "CHANGED_MIND" });
     r = await dayEnd("BR", today);
     expect(r.refunds).toMatchObject({ count: 1, amountPaise: bill.totals.payablePaise, taxPaise: bill.totals.taxPaise });
     expect(r.netAfterRefundsPaise).toBe(0);

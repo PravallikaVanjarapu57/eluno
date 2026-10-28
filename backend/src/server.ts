@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import path from "node:path";
 import { describeUpstreams, envWarnings, loadEnv } from "./config/env.js";
 import { compose } from "./compose.js";
@@ -6,6 +7,22 @@ import { createApp } from "./api/app.js";
 const env = loadEnv();
 for (const w of envWarnings(env)) console.warn(`warning: ${w}`);
 const deps = compose(env);
+
+// Accounts come from the store-tool roster plus a password supplied at run time (never committed, never over HTTP).
+// Development without AUTH_DEMO_PASSWORD: a random password for this run is generated and shown once.
+const generated = env.AUTH_DEMO_PASSWORD === undefined && env.NODE_ENV !== "production";
+const demoPassword = env.AUTH_DEMO_PASSWORD ?? (generated ? randomBytes(9).toString("base64url") : undefined);
+if (demoPassword) {
+  try {
+    const r = await deps.provision(demoPassword);
+    console.log(`  accounts: ${r.created} created, ${r.updated} updated, ${r.unchanged} unchanged, ${r.deactivated} disabled (username = lower-case staff id, e.g. s105)`);
+    if (generated) console.log(`  demo password for this run (all accounts): ${demoPassword}`);
+  } catch (e) {
+    console.error("could not provision accounts (is the store tool up?):", (e as Error).message);
+  }
+} else {
+  console.warn("warning: AUTH_DEMO_PASSWORD is not set and NODE_ENV=production: no accounts are created or refreshed.");
+}
 
 const server = createApp(deps, { staticDir: path.resolve(env.FRONTEND_DIR) }).listen(env.PORT, () => {
   console.log(`eluno-till API on http://localhost:${env.PORT}`);

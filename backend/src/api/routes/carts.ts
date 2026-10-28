@@ -4,11 +4,12 @@ import type { Carts } from "../../application/carts.js";
 import { mrpTotal, type Cart } from "../../domain/cart.js";
 import { describeLens } from "../../domain/catalog.js";
 import { CHANNELS } from "../../domain/store.js";
+import { DomainError } from "../../domain/errors.js";
+import { assertStore, me, requirePermission } from "../middleware/auth.js";
 
 const CreateBody = z.object({
   phone: z.string().min(1),
   storeCode: z.string().min(1),
-  staffId: z.string().min(1),
   channel: z.enum(CHANNELS).default("walk_in"),
 });
 
@@ -17,8 +18,9 @@ const AddPairBody = z
   .object({ frameVariantId: variantId.optional(), lensVariantId: variantId.optional(), rxId: z.string().min(1).optional() })
   .refine((b) => b.frameVariantId || b.lensVariantId, { message: "frameVariantId or lensVariantId is required" });
 
+// The approver is the signed-in store manager. A client-supplied approverId is only accepted if it is that same person.
 const ManagerDiscountBody = z.object({
-  approverId: z.string().min(1),
+  approverId: z.string().min(1).optional(),
   reasonCode: z.string().min(1),
   bps: z.number().int(),
 });
@@ -56,11 +58,27 @@ export function cartView(cart: Cart) {
   };
 }
 
+/** Every /:id route: the cart must belong to a store the signed-in user is assigned to. */
+export function cartAccess(carts: Carts): (req: import("express").Request, res: import("express").Response, next: import("express").NextFunction, id: string) => void {
+  return (req, _res, next, id) => {
+    try {
+      assertStore(req, carts.get(id).storeCode);
+      next();
+    } catch (e) {
+      next(e);
+    }
+  };
+}
+
 export function cartRoutes(carts: Carts): Router {
   const r = Router();
+  r.param("id", cartAccess(carts));
 
   r.post("/", async (req, res) => {
-    res.status(201).json(cartView(await carts.create(CreateBody.parse(req.body))));
+    const body = CreateBody.parse(req.body);
+    assertStore(req, body.storeCode);
+    // Who is billing is the signed-in user, never a field of the request.
+    res.status(201).json(cartView(await carts.create({ ...body, staffId: me(req).staffId })));
   });
 
   r.get("/:id", (req, res) => {
@@ -96,8 +114,13 @@ export function cartRoutes(carts: Carts): Router {
     });
   });
 
-  r.put("/:id/manager-discount", async (req, res) => {
-    res.json(cartView(await carts.setManagerDiscount(req.params.id, ManagerDiscountBody.parse(req.body))));
+  r.put("/:id/manager-discount", requirePermission("discount:manager", "Only a store manager can apply a manager discount. Ask a manager to sign in and apply it."), async (req, res) => {
+    const body = ManagerDiscountBody.parse(req.body);
+    const approver = me(req).staffId;
+    if (body.approverId !== undefined && body.approverId !== approver) {
+      throw new DomainError("FORBIDDEN", "A manager discount can only be approved by the signed-in manager.", { approverId: body.approverId });
+    }
+    res.json(cartView(await carts.setManagerDiscount(String(req.params.id), { ...body, approverId: approver })));
   });
 
   r.delete("/:id/manager-discount", (req, res) => {

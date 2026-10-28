@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { Prescription } from "../../domain/prescription.js";
 import type { Staff } from "../../domain/store.js";
-import type { PrescriptionSource, StaffDirectory } from "../../ports/index.js";
+import type { PrescriptionSource, StaffDirectory, StaffRoster } from "../../ports/index.js";
 import { parseUpstream, type HttpClient } from "../http/client.js";
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -64,11 +64,19 @@ const StaffListSchema = z.object({
   ),
 });
 
-export class SmtStaffDirectory implements StaffDirectory {
+export class SmtStaffDirectory implements StaffDirectory, StaffRoster {
   constructor(private readonly http: HttpClient) {}
 
-  async listByStore(storeCode: string): Promise<Staff[]> {
-    const res = await this.http.get("smt/staff", { store: storeCode });
+  listByStore(storeCode: string): Promise<Staff[]> {
+    return this.fetch({ store: storeCode });
+  }
+
+  listAll(): Promise<Staff[]> {
+    return this.fetch({});
+  }
+
+  private async fetch(query: Record<string, string>): Promise<Staff[]> {
+    const res = await this.http.get("smt/staff", query);
     return parseUpstream("smt", "staff list", StaffListSchema, res.body).staff.map((s) => ({
       staffId: s.staff_id,
       name: s.name,

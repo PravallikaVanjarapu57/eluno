@@ -1,6 +1,7 @@
 // What the application needs from the outside world. Adapters implement these; domain and application
 // code never see Shopify, store-tool or terminal shapes.
 
+import type { Role } from "../domain/auth.js";
 import type { Bill, BillStatus, PostedOrder } from "../domain/bill.js";
 import type { Cart } from "../domain/cart.js";
 import type { Paise } from "../domain/money.js";
@@ -158,4 +159,56 @@ export class OrderRejected extends Error { }
 export interface SalesLedger {
   /** The store's orders created on or after `sinceDate` (IST), with their refunds. */
   ordersSince(store: Store, sinceDate: string): Promise<LedgerOrder[]>;
+}
+
+// ---- authentication -------------------------------------------------------------------------------------------
+
+export interface UserRecord {
+  userId: string;
+  username: string;
+  passwordHash: string;
+  staffId: string;
+  name: string;
+  role: Role;
+  storeCodes: string[];
+  active: boolean;
+}
+
+export interface UserRepository {
+  findByUsername(username: string): UserRecord | null;
+  findById(userId: string): UserRecord | null;
+  upsert(user: UserRecord, at: string): void;
+  /** Accounts for staff who are no longer on the roster stop working immediately. */
+  deactivateExcept(userIds: readonly string[], at: string): number;
+  count(): number;
+}
+
+export interface SessionRecord {
+  /** SHA-256 of the cookie token: a copy of the database cannot be replayed as sessions. */
+  sessionHash: string;
+  userId: string;
+  csrfToken: string;
+  createdAt: string;
+  lastSeenAt: string;
+  expiresAt: string;
+}
+
+export interface SessionRepository {
+  create(session: SessionRecord): void;
+  get(sessionHash: string): SessionRecord | null;
+  touch(sessionHash: string, at: string): void;
+  delete(sessionHash: string): void;
+  deleteForUser(userId: string): void;
+  /** Drops sessions past their absolute expiry or last seen before `idleBefore`. */
+  purge(now: string, idleBefore: string): number;
+}
+
+export interface PasswordHasher {
+  hash(password: string): Promise<string>;
+  verify(password: string, stored: string): Promise<boolean>;
+}
+
+/** The whole store-tool roster, used to provision accounts. */
+export interface StaffRoster {
+  listAll(): Promise<Staff[]>;
 }

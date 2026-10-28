@@ -2,8 +2,10 @@ import { Router } from "express";
 import { z } from "zod";
 import type { Refunds } from "../../application/refunds.js";
 import type { CreditNote } from "../../domain/refund.js";
+import type { Checkout } from "../../application/checkout.js";
+import { assertStore, me, requirePermission } from "../middleware/auth.js";
 
-const RefundBody = z.object({ staffId: z.string().min(1), reasonCode: z.string().min(1), note: z.string().optional() });
+const RefundBody = z.object({ reasonCode: z.string().min(1), note: z.string().optional() });
 
 const NEXT_STEP: Record<CreditNote["status"], string> = {
   POSTED: "Done. Print the credit note.",
@@ -35,11 +37,30 @@ export function creditNoteView(cn: CreditNote) {
   };
 }
 
-export function refundRoutes(refunds: Refunds): Router {
+export function refundRoutes(refunds: Refunds, checkout: Checkout): Router {
   const r = Router();
+  const mayRefund = requirePermission("refund:create", "Your role cannot issue refunds.");
+  // The bill (or credit note) must belong to a store the signed-in user is assigned to.
+  r.param("invoiceNo", (req, _res, next, invoiceNo) => {
+    try {
+      assertStore(req, checkout.get(invoiceNo).store.code);
+      next();
+    } catch (e) {
+      next(e);
+    }
+  });
+  r.param("creditNoteNo", (req, _res, next, no) => {
+    try {
+      assertStore(req, refunds.get(no).store.code);
+      next();
+    } catch (e) {
+      next(e);
+    }
+  });
   // POST /bills/:invoiceNo/refund {staffId, reasonCode, note?}  -> full refund
-  r.post("/bills/:invoiceNo/refund", async (req, res) => {
-    const cn = await refunds.refundInFull(req.params.invoiceNo, RefundBody.parse(req.body));
+  r.post("/bills/:invoiceNo/refund", mayRefund, async (req, res) => {
+    // The refund is attributed to the signed-in user; a staffId in the body is ignored.
+    const cn = await refunds.refundInFull(String(req.params.invoiceNo), { ...RefundBody.parse(req.body), staffId: me(req).staffId });
     res.status(cn.status === "POSTED" ? 201 : cn.status === "CANCELLED" ? 409 : 202).json(creditNoteView(cn));
   });
   r.get("/bills/:invoiceNo/refunds", (req, res) => {
@@ -48,8 +69,8 @@ export function refundRoutes(refunds: Refunds): Router {
   r.get("/credit-notes/:creditNoteNo", (req, res) => {
     res.json(creditNoteView(refunds.get(req.params.creditNoteNo)));
   });
-  r.post("/credit-notes/:creditNoteNo/resume", async (req, res) => {
-    res.json(creditNoteView(await refunds.resume(req.params.creditNoteNo)));
+  r.post("/credit-notes/:creditNoteNo/resume", mayRefund, async (req, res) => {
+    res.json(creditNoteView(await refunds.resume(String(req.params.creditNoteNo))));
   });
   return r;
 }

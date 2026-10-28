@@ -19,9 +19,18 @@ import { CreateCustomer } from "./application/createCustomer.js";
 import { LookupCustomer } from "./application/lookupCustomer.js";
 import { Carts } from "./application/carts.js";
 import { TaxTable } from "./domain/tax.js";
+import { AuthService } from "./application/auth.js";
+import { provisionUsers, type ProvisionResult } from "./application/provisionUsers.js";
+import { ScryptHasher } from "./adapters/crypto/scrypt.js";
+import { SqliteSessionRepository, SqliteUserRepository } from "./adapters/sqlite/authRepo.js";
 import type { AppDeps } from "./api/app.js";
 
-export function compose(env: Env): AppDeps {
+export interface Composed extends AppDeps {
+  /** Create/refresh one login per salesperson and store manager on the store-tool roster. Operator-run, never over HTTP. */
+  provision(password: string): Promise<ProvisionResult>;
+}
+
+export function compose(env: Env): Composed {
   const log = (msg: string) => console.log(msg);
   // Shopify is the system of record; the token goes to Shopify and nowhere else.
   const shopify = new ShopifyGateway(
@@ -45,6 +54,17 @@ export function compose(env: Env): AppDeps {
   const creditNotes = new SqliteCreditNoteRepository(db);
   const staff = new SmtStaffDirectory(smtHttp);
   const terminal = new TerminalClient(new HttpClient({ baseUrl: env.TERMINAL_BASE_URL, name: "terminal", log }));
+
+  const users = new SqliteUserRepository(db);
+  const hasher = new ScryptHasher(env.AUTH_SCRYPT_LOG2N);
+  const auth = new AuthService({
+    users,
+    sessions: new SqliteSessionRepository(db),
+    hasher,
+    clock,
+    audit,
+    policy: { idleMs: env.AUTH_IDLE_MINUTES * 60_000, maxMs: env.AUTH_MAX_HOURS * 3_600_000 },
+  });
 
   return {
     config,
@@ -79,5 +99,10 @@ export function compose(env: Env): AppDeps {
     }),
     dayEnd: new DayEnd({ ledger: shopify, stores: shopify, bills, creditNotes, clock }),
     reference: new Reference({ stores: shopify, frames: shopify, staff, reasonCodes: config.reasonCodes }),
+    auth,
+    audit,
+    clock,
+    http: { secureCookies: env.COOKIE_SECURE, maxAgeMs: env.AUTH_MAX_HOURS * 3_600_000, trustProxy: env.TRUST_PROXY },
+    provision: (password) => provisionUsers({ roster: staff, stores: shopify, users, hasher, clock, password }),
   };
 }

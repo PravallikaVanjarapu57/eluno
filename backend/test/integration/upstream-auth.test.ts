@@ -1,9 +1,9 @@
 import { createServer, type IncomingHttpHeaders } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import request from "supertest";
 import { compose } from "../../src/compose.js";
 import { loadEnv } from "../../src/config/env.js";
+import { addUser, signIn } from "../support/auth.js";
 import { createApp } from "../../src/api/app.js";
 
 // Three fake upstreams on separate ports, recording what the till sends each of them.
@@ -39,7 +39,9 @@ describe("upstream configuration", () => {
       TERMINAL_BASE_URL: terminal.url,
       DB_PATH: ":memory:",
     });
-    const res = await request(createApp(compose(env))).get("/customers").query({ phone: "9000000005" });
+    const deps = compose({ ...env, AUTH_SCRYPT_LOG2N: 10 });
+    await addUser(deps, { staffId: "S105", role: "salesperson", storeCodes: ["HSR"] });
+    const res = await (await signIn(createApp(deps), "s105")).get("/customers").query({ phone: "9000000005" });
     expect(res.body.code).toBe("CUSTOMER_NOT_FOUND"); // the fake Shopify has no customers
 
     const toShopify = seen.filter((s) => s.upstream === "shopify");

@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
+import { me, requirePermission } from "../middleware/auth.js";
 import type { CreateCustomer } from "../../application/createCustomer.js";
 import type { LookupCustomer } from "../../application/lookupCustomer.js";
 
@@ -22,9 +23,9 @@ export function customerRoutes(lookup: LookupCustomer, create: CreateCustomer): 
   });
 
   // POST /customers {phone, firstName, lastName?, email?} -> 201, the same shape as the lookup (ready to bill)
-  r.post("/", async (req, res) => {
+  r.post("/", requirePermission("customer:create", "Your role cannot create customers."), async (req, res) => {
     const body = CreateBody.parse(req.body);
-    res.status(201).json(await create.create(body, "unknown"));
+    res.status(201).json(await create.create(body, me(req).staffId));
   });
 
   return r;

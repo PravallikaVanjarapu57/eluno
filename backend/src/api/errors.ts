@@ -5,6 +5,13 @@ import { AmbiguousWriteError, HttpError, RetriesExhaustedError, UpstreamShapeErr
 
 const STATUS: Record<DomainErrorCode, number> = {
   INVALID_PHONE: 400,
+  UNAUTHENTICATED: 401,
+  INVALID_CREDENTIALS: 401,
+  TOO_MANY_LOGINS: 429,
+  FORBIDDEN: 403,
+  STORE_FORBIDDEN: 403,
+  CSRF_INVALID: 403,
+  LENS_RULES_LOCKED: 403,
   CUSTOMER_NOT_FOUND: 404,
   CUSTOMER_AMBIGUOUS: 409,
   CUSTOMER_EXISTS: 409,
@@ -36,6 +43,7 @@ const STATUS: Record<DomainErrorCode, number> = {
 
 export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
   if (err instanceof DomainError) {
+    if (err.code === "TOO_MANY_LOGINS") res.setHeader("Retry-After", String(err.details.retryAfterSeconds ?? 60));
     res.status(STATUS[err.code]).json({ code: err.code, message: err.message, details: err.details });
     return;
   }

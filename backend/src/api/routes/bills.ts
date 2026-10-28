@@ -2,9 +2,12 @@ import { Router } from "express";
 import { z } from "zod";
 import type { Checkout } from "../../application/checkout.js";
 import { PAYMENT_METHODS, type Bill } from "../../domain/bill.js";
+import type { Carts } from "../../application/carts.js";
+import { assertStore, me } from "../middleware/auth.js";
+import { cartAccess } from "./carts.js";
 
 const CheckoutBody = z.object({ paymentMethod: z.enum(PAYMENT_METHODS) });
-const CancelBody = z.object({ staffId: z.string().min(1), reason: z.string().min(3) });
+const CancelBody = z.object({ reason: z.string().min(3) });
 
 const NEXT_STEP: Record<Bill["status"], string> = {
   POSTED: "Done. Print the invoice.",
@@ -40,8 +43,9 @@ export function billView(b: Bill) {
 
 const statusCode = (b: Bill) => (b.status === "POSTED" ? 201 : b.status === "CANCELLED" ? 402 : 202);
 
-export function checkoutRoute(checkout: Checkout): Router {
+export function checkoutRoute(checkout: Checkout, carts: Carts): Router {
   const r = Router();
+  r.param("id", cartAccess(carts));
   // POST /carts/:id/checkout {paymentMethod}
   r.post("/:id/checkout", async (req, res) => {
     const { paymentMethod } = CheckoutBody.parse(req.body);
@@ -59,9 +63,19 @@ const ListQuery = z.object({ store: z.string().min(1), limit: z.coerce.number().
 
 export function billRoutes(checkout: Checkout): Router {
   const r = Router();
+  // Every /:invoiceNo route: the bill must belong to a store the signed-in user is assigned to.
+  r.param("invoiceNo", (req, _res, next, invoiceNo) => {
+    try {
+      assertStore(req, checkout.get(invoiceNo).store.code);
+      next();
+    } catch (e) {
+      next(e);
+    }
+  });
   // GET /bills?store=HSR&limit=25 -> recent bills for the store, newest first
   r.get("/", (req, res) => {
     const q = ListQuery.parse(req.query);
+    assertStore(req, q.store);
     res.json(
       checkout.recent(q.store, q.limit).map((b) => ({
         invoiceNo: b.invoiceNo,
@@ -82,8 +96,8 @@ export function billRoutes(checkout: Checkout): Router {
     res.status(statusCode(bill) === 201 ? 200 : statusCode(bill)).json(billView(bill));
   });
   r.post("/:invoiceNo/cancel", (req, res) => {
-    const { staffId, reason } = CancelBody.parse(req.body);
-    res.json(billView(checkout.cancel(req.params.invoiceNo, staffId, reason)));
+    const { reason } = CancelBody.parse(req.body);
+    res.json(billView(checkout.cancel(req.params.invoiceNo, me(req).staffId, reason)));
   });
   return r;
 }
