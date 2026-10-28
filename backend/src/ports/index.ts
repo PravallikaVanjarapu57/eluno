@@ -9,12 +9,18 @@ import type { CreditNote, CreditNoteStatus } from "../domain/refund.js";
 import type { LedgerOrder } from "../domain/dayEnd.js";
 import type { CatalogItem, FrameItem, LensItem } from "../domain/catalog.js";
 import type { Customer } from "../domain/customer.js";
-import type { Prescription } from "../domain/prescription.js";
+import type { NewPrescription, Prescription } from "../domain/prescription.js";
 import type { Staff, Store } from "../domain/store.js";
 
 export interface CustomerDirectory {
   /** All customers whose phone matches exactly (E.164). */
   findByPhone(phone: string): Promise<Customer[]>;
+  getById(id: string): Promise<Customer | null>;
+  /**
+   * One page of customers, ordered by id. `text` matches name, email or phone; `afterId` is the last id of the previous page.
+   * `nextCursor` is the id to pass for the next page, or null on the last one.
+   */
+  search(q: { text: string; afterId?: string; limit: number }): Promise<{ customers: Customer[]; nextCursor: string | null }>;
 }
 
 export interface NewCustomer {
@@ -29,18 +35,41 @@ export interface NewCustomer {
 export interface CustomerRegistry {
   /** Throws CustomerAlreadyExists when the phone is taken, CustomerRejected for other refusals. */
   createCustomer(input: NewCustomer): Promise<Customer>;
+  /** Change contact details. The phone is the key prescriptions hang off, so it is deliberately not editable here. */
+  updateCustomer(id: string, patch: { firstName: string; lastName: string; email: string | null }): Promise<Customer>;
 }
 
 /** The system of record already has a customer with this phone (also how a lost create race shows up). */
 export class CustomerAlreadyExists extends Error { }
 /** The create may or may not have happened (timeout, 5xx): look the phone up before deciding anything. */
 export class CustomerOutcomeUnknown extends Error { }
+/** An edit would clash with another customer (e.g. their email), so it was refused. */
+export class CustomerConflict extends Error { }
 /** The system of record refused the customer data; retrying unchanged will not help. */
 export class CustomerRejected extends Error { }
 
 export interface PrescriptionSource {
   listByPhone(phone: string): Promise<Prescription[]>;
 }
+
+/** Prescriptions for many customers in one call (the customer list shows a summary per row). */
+export interface PrescriptionIndex {
+  listByPhones(phones: readonly string[]): Promise<Prescription[]>;
+}
+
+/** Recording a prescription in the store tool, where prescriptions live. */
+export interface PrescriptionRegistry {
+  /**
+   * `clientRef` makes the write idempotent: sending the same one again returns the prescription already stored instead of a second one.
+   * Throws PrescriptionRejected when the store tool refuses the values, PrescriptionOutcomeUnknown when the answer was lost.
+   */
+  createPrescription(input: NewPrescription & { phone: string; clientRef: string }): Promise<Prescription>;
+}
+
+/** The store tool refused the prescription; retrying unchanged will not help. */
+export class PrescriptionRejected extends Error { }
+/** The write may or may not have happened (timeout, 5xx). Sending it again with the same clientRef is safe. */
+export class PrescriptionOutcomeUnknown extends Error { }
 
 export interface Catalog {
   getItem(variantId: string): Promise<CatalogItem | null>;

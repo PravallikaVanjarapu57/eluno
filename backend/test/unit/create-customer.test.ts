@@ -16,6 +16,17 @@ class FakeShopify {
   async findByPhone(phone: string) {
     return this.customers.filter((c) => c.phone === phone);
   }
+  async getById(id: string) {
+    return this.customers.find((c) => c.id === id) ?? null;
+  }
+  async search() {
+    return { customers: this.customers, nextCursor: null };
+  }
+  async updateCustomer(id: string, patch: { firstName: string; lastName: string; email: string | null }): Promise<Customer> {
+    const c = this.customers.find((x) => x.id === id)!;
+    Object.assign(c, patch);
+    return c;
+  }
   async createCustomer(input: NewCustomer): Promise<Customer> {
     this.creates.push(input);
     if (this.next) return this.next(input);

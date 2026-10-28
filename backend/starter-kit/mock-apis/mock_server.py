@@ -7,6 +7,9 @@
 1. Shopify Admin REST shape, base /admin/api/2026-10  (the system of record)
    GET  customers/search.json?query=phone:%2B919000000005
    POST customers.json {"customer": {first_name, last_name, phone, email?}} -> 201, or 422 {errors:{phone:["has already been taken"]}}
+   GET  customers.json?limit=&since_id=              GET customers/{id}.json
+   PUT  customers/{id}.json {"customer": {first_name, last_name, email}}  -> 200, or 422 (email "has already been taken")
+        customers/search.json also takes free text (name, email or phone fragments) and `id:>N`, newest-id-last, `limit=`
    GET  locations.json
    GET  products.json?product_type=Frame|Lens&limit=250        GET products/{id}.json   GET variants/{id}.json
    GET  inventory_levels.json?inventory_item_ids=1,2&location_ids=3
@@ -24,6 +27,9 @@
    refunds cannot exceed captured sale transactions, restock_type "return" adjusts inventory at the given location.
 2. SMT (store tool) shape
    GET /smt/prescriptions?phone=%2B919000000005        GET /smt/staff?store=HSR
+   GET /smt/prescriptions?phones=%2B91900...,%2B91900...   (batch, for list summaries)    GET /smt/prescriptions/RX5001
+   POST /smt/prescriptions {client_ref, customer_id, phone, date, valid_until, source, optometrist_id, od, os, pd, notes}
+        -> 201; the same client_ref again -> 200 with the stored record (idempotent); 422 on bad values or unknown customer
 3. Payment terminal shape (Razorpay-like)
    POST /terminal/charges {amount_paise, method, order_ref}    -> 201 {charge_id, status:"captured"} or 503 once, retry
    GET  /terminal/charges/{id}                                 -> idempotent status
@@ -68,14 +74,49 @@ class H(BaseHTTPRequestHandler):
     def log_message(self, fmt, *a): sys.stderr.write(f"{self.command} {self.path}\n")
     def _err(self, code, msg): return self._send(code, {"errors": msg})
 
+    def _find(self, qs, limit):
+        """Free-text customer search: every term must appear in the name, email or phone; `id:>N` pages by id."""
+        after = 0; terms = []
+        for t in qs.split():
+            m = re.match(r"id:>(\d+)$", t)
+            if m: after = int(m.group(1))
+            else: terms.append(t.lower())
+        def hay(c): return " ".join(str(c.get(k) or "") for k in ("first_name", "last_name", "email", "phone")).lower()
+        hits = [c for c in S["customers"] if c["id"] > after and all(t in hay(c) or t.lstrip("+") in hay(c) for t in terms)]
+        return sorted(hits, key=lambda c: c["id"])[:limit]
+
+    # ------------------------------------------------------------ PUT
+    def do_PUT(self):
+        p = urlparse(self.path).path; b = self._body()
+        if b is None: return self._err(400, "invalid JSON")
+        if not p.startswith(API): return self._err(404, "Not Found")
+        if FLAKE and random.random() < 0.1: return self._send(429, {"errors": "Exceeded 2 calls per second for api client. Reduce request rates to resume uninterrupted service."}, {"Retry-After": "1.0"})
+        m = re.match(r"customers/(\d+)\.json$", p[len(API):])
+        if not m: return self._err(404, "Not Found")
+        cust = next((c for c in S["customers"] if c["id"] == int(m.group(1))), None)
+        if not cust: return self._err(404, "Not Found")
+        c = b.get("customer") or {}
+        email = c.get("email", cust.get("email"))
+        if email and not re.match(r"^[^\s@]+@[^\s@]+\.[^\s@]+$", email): return self._send(422, {"errors": {"email": ["is invalid"]}})
+        if email and any(x is not cust and (x.get("email") or "").lower() == email.lower() for x in S["customers"]): return self._send(422, {"errors": {"email": ["has already been taken"]}})
+        if "phone" in c and c["phone"] != cust["phone"] and any(x is not cust and x["phone"] == c["phone"] for x in S["customers"]): return self._send(422, {"errors": {"phone": ["has already been taken"]}})
+        for k in ("first_name", "last_name", "email", "phone", "tags", "note"):
+            if k in c: cust[k] = c[k]
+        cust["updated_at"] = now()
+        return self._send(200, {"customer": cust})
+
     # ------------------------------------------------------------ GET
     def do_GET(self):
         u = urlparse(self.path); q = {k: unquote(v[0]) for k, v in parse_qs(u.query).items()}; p = u.path
         if p == "/health": return self._send(200, {"ok": True})
         if p.startswith("/smt/"):
             if p == "/smt/prescriptions":
-                ph = q.get("phone", "").replace(" ", "+")
-                return self._send(200, {"prescriptions": sorted([r for r in S["rx"] if r["phone"] == ph], key=lambda r: r["date"], reverse=True)})
+                phs = {x.replace(" ", "+") for x in (q.get("phones") or q.get("phone", "")).split(",") if x}
+                return self._send(200, {"prescriptions": sorted([r for r in S["rx"] if r["phone"] in phs], key=lambda r: (r["date"], r["rx_id"]), reverse=True)})
+            m = re.match(r"/smt/prescriptions/(RX\d+)$", p)
+            if m:
+                r = next((x for x in S["rx"] if x["rx_id"] == m.group(1)), None)
+                return self._send(200, {"prescription": r}) if r else self._err(404, "Not Found")
             if p == "/smt/staff": return self._send(200, {"staff": [s for s in S["staff"] if not q.get("store") or s["store_code"] == q["store"]]})
             return self._err(404, "Not Found")
         if p.startswith("/terminal/charges/"):
@@ -83,8 +124,19 @@ class H(BaseHTTPRequestHandler):
         if not p.startswith(API): return self._err(404, "Not Found")
         r = p[len(API):]
         if r == "customers/search.json":
-            m = re.search(r"phone:(\S+)", q.get("query", "")); ph = (m.group(1) if m else "").replace(" ", "+")
-            return self._send(200, {"customers": [c for c in S["customers"] if ph and c["phone"] == ph]})
+            qs = q.get("query", ""); m = re.search(r"phone:(\S+)", qs)
+            if m:
+                ph = m.group(1).replace(" ", "+")
+                return self._send(200, {"customers": [c for c in S["customers"] if ph and c["phone"] == ph]})
+            return self._send(200, {"customers": self._find(qs, int(q.get("limit", 50)))})
+        if r == "customers.json":
+            after = int(q.get("since_id", 0))
+            cs = sorted((c for c in S["customers"] if c["id"] > after), key=lambda c: c["id"])
+            return self._send(200, {"customers": cs[: int(q.get("limit", 50))]})
+        m = re.match(r"customers/(\d+)\.json$", r)
+        if m:
+            c = next((c for c in S["customers"] if c["id"] == int(m.group(1))), None)
+            return self._send(200, {"customer": c}) if c else self._err(404, "Not Found")
         if r == "locations.json": return self._send(200, {"locations": S["locations"]})
         if r == "products.json":
             ps = [x for x in S["products"] if not q.get("product_type") or x["product_type"] == q["product_type"]]
@@ -114,6 +166,25 @@ class H(BaseHTTPRequestHandler):
     def do_POST(self):
         p = urlparse(self.path).path; b = self._body()
         if b is None: return self._err(400, "invalid JSON")
+        if p == "/smt/prescriptions":
+            ref = b.get("client_ref")
+            if ref:
+                again = next((x for x in S["rx"] if x.get("client_ref") == ref), None)
+                if again: return self._send(200, {"prescription": again})
+            cust = next((c for c in S["customers"] if c["id"] == b.get("customer_id")), None)
+            if not cust or cust["phone"] != b.get("phone"): return self._send(422, {"errors": {"customer_id": ["unknown customer, or the phone does not belong to them"]}})
+            ok = lambda v: isinstance(v, (int, float)) and not isinstance(v, bool) and (v * 4) == int(v * 4)
+            eyes = [b.get("od"), b.get("os")]
+            if not all(isinstance(e, dict) and ok(e.get("sph")) and ok(e.get("cyl")) and (e.get("add") is None or ok(e["add"])) for e in eyes):
+                return self._send(422, {"errors": {"od/os": ["sph, cyl and add must be on the 0.25 grid"]}})
+            if not (re.match(r"^\d{4}-\d{2}-\d{2}$", str(b.get("date"))) and re.match(r"^\d{4}-\d{2}-\d{2}$", str(b.get("valid_until"))) and b["valid_until"] >= b["date"]):
+                return self._send(422, {"errors": {"date": ["date and valid_until must be YYYY-MM-DD, valid_until not before date"]}})
+            if b.get("source") not in ("in_store", "external"): return self._send(422, {"errors": {"source": ["must be in_store or external"]}})
+            n = max([int(x["rx_id"][2:]) for x in S["rx"]] + [5000]) + 1
+            rec = {"rx_id": f"RX{n}", "customer_id": cust["id"], "phone": cust["phone"], "date": b["date"], "source": b["source"], "optometrist_id": b.get("optometrist_id"),
+                   "od": b["od"], "os": b["os"], "pd": b.get("pd") or {"binocular": None, "mono_r": None, "mono_l": None}, "valid_until": b["valid_until"],
+                   "notes": b.get("notes"), "client_ref": ref}
+            S["rx"].append(rec); return self._send(201, {"prescription": rec})
         if p == "/terminal/charges":
             amt = int(b.get("amount_paise", 0))
             if amt <= 0: return self._err(422, "amount_paise must be > 0")

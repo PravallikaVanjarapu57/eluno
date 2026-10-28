@@ -5,6 +5,8 @@ import type { PosConfig } from "../config/load.js";
 import type { Db } from "../adapters/sqlite/db.js";
 import type { LookupCustomer } from "../application/lookupCustomer.js";
 import type { CreateCustomer } from "../application/createCustomer.js";
+import type { Customers } from "../application/customers.js";
+import type { Prescriptions } from "../application/prescriptions.js";
 import type { Carts } from "../application/carts.js";
 import type { Checkout } from "../application/checkout.js";
 import type { Refunds } from "../application/refunds.js";
@@ -28,6 +30,8 @@ export interface AppDeps {
   db: Db;
   lookupCustomer: LookupCustomer;
   createCustomer: CreateCustomer;
+  customers: Customers;
+  prescriptions: Prescriptions;
   carts: Carts;
   checkout: Checkout;
   refunds: Refunds;
@@ -85,7 +89,7 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): express.Expr
   });
 
   const billing = requirePermission("billing:use", "Your role cannot bill.");
-  api.use("/customers", customerRoutes(deps.lookupCustomer, deps.createCustomer));
+  api.use("/customers", customerRoutes(deps.lookupCustomer, deps.createCustomer, deps.customers, deps.prescriptions));
   api.use("/carts", billing, cartRoutes(deps.carts));
   api.use("/carts", billing, checkoutRoute(deps.checkout, deps.carts));
   api.use(refundRoutes(deps.refunds, deps.checkout));

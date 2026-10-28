@@ -7,6 +7,7 @@ export const ShopifyCustomerSchema = z.object({
   first_name: z.string().nullable(),
   last_name: z.string().nullable(),
   phone: z.string().nullable(),
+  email: z.string().nullable().optional(),
   tags: z.string(),
   total_spent: z.string(),
   orders_count: z.number().int(),

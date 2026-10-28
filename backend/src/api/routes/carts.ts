@@ -7,11 +7,15 @@ import { CHANNELS } from "../../domain/store.js";
 import { DomainError } from "../../domain/errors.js";
 import { assertStore, me, requirePermission } from "../middleware/auth.js";
 
-const CreateBody = z.object({
-  phone: z.string().min(1),
-  storeCode: z.string().min(1),
-  channel: z.enum(CHANNELS).default("walk_in"),
-});
+const CreateBody = z
+  .object({
+    phone: z.string().min(1).optional(),
+    customerId: z.string().regex(/^[A-Za-z0-9_-]{1,40}$/).optional(),
+    storeCode: z.string().min(1),
+    channel: z.enum(CHANNELS).default("walk_in"),
+  })
+  .refine((b) => !!b.phone !== !!b.customerId, { message: "send either phone or customerId" });
+const SelectRxBody = z.object({ rxId: z.string().min(1).max(40).nullable() });
 
 const variantId = z.union([z.string().regex(/^\d+$/), z.number().int().positive()]).transform(String);
 const AddPairBody = z
@@ -33,6 +37,7 @@ export function cartView(cart: Cart) {
     storeCode: cart.storeCode,
     staffId: cart.staffId,
     channel: cart.channel,
+    selectedRxId: cart.selectedRxId ?? null,
     customer: { id: cart.customer.id, name: `${cart.customer.firstName} ${cart.customer.lastName}`.trim(), phone: cart.customer.phone, tags: cart.customer.tags },
     pairs: cart.pairs.map((p) => ({
       pairRef: p.pairRef,
@@ -83,6 +88,12 @@ export function cartRoutes(carts: Carts): Router {
 
   r.get("/:id", (req, res) => {
     res.json(cartView(carts.get(req.params.id)));
+  });
+
+  // PUT /carts/:id/prescription {rxId | null} -> pick the prescription this sale is made to (must be in force), or clear it
+  r.put("/:id/prescription", async (req, res) => {
+    const { rxId } = SelectRxBody.parse(req.body);
+    res.json(cartView(await carts.selectPrescription(String(req.params.id), rxId, me(req).staffId)));
   });
 
   r.post("/:id/pairs", async (req, res) => {

@@ -17,7 +17,7 @@ const clock: Clock = { now: () => new Date(), today: () => "2026-10-23" };
 
 function useCase(customers: Customer[], rxs: Prescription[] | Error) {
   const phones: string[] = [];
-  const dir: CustomerDirectory = { findByPhone: async (p) => (phones.push(p), customers) };
+  const dir: CustomerDirectory = { findByPhone: async (p) => (phones.push(p), customers), getById: async () => null, search: async () => ({ customers: [], nextCursor: null }) };
   const src: PrescriptionSource = { listByPhone: async () => { if (rxs instanceof Error) throw rxs; return rxs; } };
   return { lookup: new LookupCustomer(dir, src, clock), phones };
 }

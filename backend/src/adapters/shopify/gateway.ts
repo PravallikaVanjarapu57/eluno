@@ -3,7 +3,7 @@ import type { Customer } from "../../domain/customer.js";
 import type { Store } from "../../domain/store.js";
 import type { Bill, PostedOrder } from "../../domain/bill.js";
 import { parseInvoiceSeq } from "../../domain/bill.js";
-import { CustomerAlreadyExists, CustomerOutcomeUnknown, CustomerRejected, OrderOutcomeUnknown, OrderRejected, type Catalog, type CustomerDirectory, type CustomerRegistry, type FrameListing, type NewCustomer, type OrderSink, type SalesLedger, type StockLevels, type StoreDirectory, type StoreListing } from "../../ports/index.js";
+import { CustomerAlreadyExists, CustomerConflict, CustomerOutcomeUnknown, CustomerRejected, OrderOutcomeUnknown, OrderRejected, type Catalog, type CustomerDirectory, type CustomerRegistry, type FrameListing, type NewCustomer, type OrderSink, type SalesLedger, type StockLevels, type StoreDirectory, type StoreListing } from "../../ports/index.js";
 import { AmbiguousWriteError, HttpError, parseUpstream, RetriesExhaustedError, type HttpClient } from "../http/client.js";
 import type { CreditNote } from "../../domain/refund.js";
 import type { Paise } from "../../domain/money.js";
@@ -53,6 +53,46 @@ export class ShopifyGateway implements CustomerDirectory, CustomerRegistry, Cata
     const { customers } = parseUpstream("shopify", "customer search", CustomerSearchResponseSchema, res.body);
     // Search is fuzzy in real Shopify; keep exact matches only.
     return customers.filter((c) => c.phone === phone).map(toCustomer);
+  }
+
+  async getById(id: string): Promise<Customer | null> {
+    if (!/^\d+$/.test(id)) return null;
+    try {
+      const res = await this.http.get(`customers/${id}.json`);
+      return toCustomer(parseUpstream("shopify", "customer", CustomerResponseSchema, res.body).customer);
+    } catch (e) {
+      if (e instanceof HttpError && e.status === 404) return null;
+      throw e;
+    }
+  }
+
+  async search(q: { text: string; afterId?: string; limit: number }): Promise<{ customers: Customer[]; nextCursor: string | null }> {
+    // Ask for one more than a page so we know whether there is a next one without a second call. Ids are numbers in Shopify; a cursor that is not one starts over.
+    const after = q.afterId && /^\d+$/.test(q.afterId) ? Number(q.afterId) : 0;
+    const text = q.text.replace(/[:"]/g, " ").trim(); // no search operators from the keyboard: the only operator is the paging one below
+    const res = text
+      ? await this.http.get("customers/search.json", { query: `${text} id:>${after}`, limit: q.limit + 1 })
+      : await this.http.get("customers.json", { limit: q.limit + 1, since_id: after });
+    const { customers } = parseUpstream("shopify", "customer search", CustomerSearchResponseSchema, res.body);
+    const page = customers.slice(0, q.limit).map(toCustomer);
+    return { customers: page, nextCursor: customers.length > q.limit ? (page[page.length - 1]?.id ?? null) : null };
+  }
+
+  async updateCustomer(id: string, patch: { firstName: string; lastName: string; email: string | null }): Promise<Customer> {
+    try {
+      // Same values sent twice leave the same customer, so an uncertain answer may be retried.
+      const res = await this.http.request({
+        method: "PUT",
+        path: `customers/${id}.json`,
+        body: { customer: { first_name: patch.firstName, last_name: patch.lastName, email: patch.email } },
+        idempotent: true,
+      });
+      return toCustomer(parseUpstream("shopify", "customer", CustomerResponseSchema, res.body).customer);
+    } catch (e) {
+      if (e instanceof HttpError && e.status === 422 && JSON.stringify(e.body).includes("has already been taken")) throw new CustomerConflict("Another customer already has this email.");
+      if (e instanceof HttpError && e.status >= 400 && e.status < 500) throw new CustomerRejected(`Shopify refused the customer update: ${JSON.stringify(e.body)}`);
+      throw e;
+    }
   }
 
   async getItem(variantId: string): Promise<CatalogItem | null> {

@@ -5,6 +5,8 @@ import { loadPosConfig } from "../../src/config/load.js";
 import { openDb } from "../../src/adapters/sqlite/db.js";
 import type { LookupCustomer } from "../../src/application/lookupCustomer.js";
 import type { CreateCustomer } from "../../src/application/createCustomer.js";
+import type { Customers } from "../../src/application/customers.js";
+import type { Prescriptions } from "../../src/application/prescriptions.js";
 import type { Carts } from "../../src/application/carts.js";
 import type { Checkout } from "../../src/application/checkout.js";
 import type { Refunds } from "../../src/application/refunds.js";
@@ -14,7 +16,7 @@ import type { Reference } from "../../src/application/reference.js";
 import type { DayEnd } from "../../src/application/dayEnd.js";
 
 describe("GET /health", () => {
-  const app = createApp({ config: loadPosConfig("config"), db: openDb(":memory:"), lookupCustomer: {} as LookupCustomer, createCustomer: {} as CreateCustomer, carts: {} as Carts, checkout: {} as Checkout, refunds: {} as Refunds, dayEnd: {} as DayEnd, reference: {} as Reference, auth: { authenticate: () => null } as unknown as AuthService, audit: {} as AuditLog, clock: {} as Clock, http: { secureCookies: false, maxAgeMs: 1000, trustProxy: 0 } });
+  const app = createApp({ config: loadPosConfig("config"), db: openDb(":memory:"), lookupCustomer: {} as LookupCustomer, createCustomer: {} as CreateCustomer, customers: {} as Customers, prescriptions: {} as Prescriptions, carts: {} as Carts, checkout: {} as Checkout, refunds: {} as Refunds, dayEnd: {} as DayEnd, reference: {} as Reference, auth: { authenticate: () => null } as unknown as AuthService, audit: {} as AuditLog, clock: {} as Clock, http: { secureCookies: false, maxAgeMs: 1000, trustProxy: 0 } });
 
   it("reports loaded config and schema version", async () => {
     const res = await request(app).get("/health");

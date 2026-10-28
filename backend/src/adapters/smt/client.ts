@@ -1,8 +1,8 @@
 import { z } from "zod";
 import type { Prescription } from "../../domain/prescription.js";
 import type { Staff } from "../../domain/store.js";
-import type { PrescriptionSource, StaffDirectory, StaffRoster } from "../../ports/index.js";
-import { parseUpstream, type HttpClient } from "../http/client.js";
+import { PrescriptionOutcomeUnknown, PrescriptionRejected, type PrescriptionIndex, type PrescriptionRegistry, type PrescriptionSource, type StaffDirectory, type StaffRoster } from "../../ports/index.js";
+import { AmbiguousWriteError, HttpError, parseUpstream, RetriesExhaustedError, type HttpClient } from "../http/client.js";
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const quarterDioptre = z.number().refine((v) => Number.isInteger(v * 4), "not on the 0.25 D grid");
@@ -30,24 +30,61 @@ const SmtPrescriptionSchema = z.object({
 
 const ListSchema = z.object({ prescriptions: z.array(SmtPrescriptionSchema) });
 
+const OneSchema = z.object({ prescription: SmtPrescriptionSchema });
+
+const toPrescription = (r: z.infer<typeof SmtPrescriptionSchema>): Prescription => ({
+  rxId: r.rx_id,
+  customerId: String(r.customer_id),
+  testedOn: r.date,
+  validUntil: r.valid_until,
+  source: r.source,
+  optometristId: r.optometrist_id,
+  od: r.od,
+  os: r.os,
+  pd: { binocular: r.pd.binocular, monoR: r.pd.mono_r, monoL: r.pd.mono_l },
+  notes: r.notes,
+});
+
 /** Store-management tool adapter: prescriptions live here, not in Shopify. */
-export class SmtClient implements PrescriptionSource {
+export class SmtClient implements PrescriptionSource, PrescriptionIndex, PrescriptionRegistry {
   constructor(private readonly http: HttpClient) {}
 
   async listByPhone(phone: string): Promise<Prescription[]> {
     const res = await this.http.get("smt/prescriptions", { phone });
-    return parseUpstream("smt", "prescription list", ListSchema, res.body).prescriptions.map((r) => ({
-      rxId: r.rx_id,
-      customerId: String(r.customer_id),
-      testedOn: r.date,
-      validUntil: r.valid_until,
-      source: r.source,
-      optometristId: r.optometrist_id,
-      od: r.od,
-      os: r.os,
-      pd: { binocular: r.pd.binocular, monoR: r.pd.mono_r, monoL: r.pd.mono_l },
-      notes: r.notes,
-    }));
+    return parseUpstream("smt", "prescription list", ListSchema, res.body).prescriptions.map(toPrescription);
+  }
+
+  async listByPhones(phones: readonly string[]): Promise<Prescription[]> {
+    if (phones.length === 0) return [];
+    const res = await this.http.get("smt/prescriptions", { phones: phones.join(",") });
+    return parseUpstream("smt", "prescription list", ListSchema, res.body).prescriptions.map(toPrescription);
+  }
+
+  async createPrescription(input: Parameters<PrescriptionRegistry["createPrescription"]>[0]): Promise<Prescription> {
+    try {
+      const res = await this.http.post(
+        "smt/prescriptions",
+        {
+          client_ref: input.clientRef,
+          customer_id: Number(input.customerId),
+          phone: input.phone,
+          date: input.testedOn,
+          valid_until: input.validUntil,
+          source: input.source,
+          optometrist_id: input.optometristId,
+          od: input.od,
+          os: input.os,
+          pd: { binocular: input.pd.binocular, mono_r: input.pd.monoR, mono_l: input.pd.monoL },
+          notes: input.notes,
+        },
+        { idempotent: true }, // the client_ref makes a repeat return the stored record, so an uncertain write can be sent again
+      );
+      return toPrescription(parseUpstream("smt", "prescription", OneSchema, res.body).prescription);
+    } catch (e) {
+      if (e instanceof AmbiguousWriteError || e instanceof RetriesExhaustedError) throw new PrescriptionOutcomeUnknown(e.message);
+      if (e instanceof HttpError && e.status >= 400 && e.status < 500) throw new PrescriptionRejected(`The store tool refused the prescription: ${JSON.stringify(e.body)}`);
+      throw e;
+    }
   }
 }
 

@@ -31,6 +31,10 @@ export interface Cart {
   pairs: Pair[];
   /** Manager's discretionary discount, if one was approved for this bill. */
   manualDiscount: ManualDiscount | null;
+  /** The prescription staff picked for this sale; lenses are made to it unless a pair names another. */
+  selectedRxId?: string | null;
+  /** Set when the sale was started from a customer profile: with several prescriptions in force, staff must pick one. */
+  rxSelection?: "explicit";
   status: "open" | "checked_out";
   createdAt: string;
   updatedAt: string;

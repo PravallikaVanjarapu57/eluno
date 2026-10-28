@@ -26,6 +26,8 @@ export type DomainErrorCode =
   | "FRAME_NOT_RX_ABLE"
   | "RX_REQUIRED"
   | "RX_NOT_FOUND"
+  | "RX_INVALID"
+  | "RX_SELECTION_REQUIRED"
   | "RX_NOT_IN_FORCE"
   | "RX_UNAVAILABLE"
   | "LENS_RX_MISMATCH"

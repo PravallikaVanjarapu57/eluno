@@ -1,6 +1,6 @@
 import { DomainError } from "../domain/errors.js";
 import { normalizeIndianMobile } from "../domain/phone.js";
-import type { Customer } from "../domain/customer.js";
+import { checkCustomerDetails, type Customer } from "../domain/customer.js";
 import { CustomerAlreadyExists, CustomerOutcomeUnknown, CustomerRejected, type AuditLog, type Clock, type CustomerDirectory, type CustomerRegistry } from "../ports/index.js";
 import type { CustomerLookup, LookupCustomer } from "./lookupCustomer.js";
 
@@ -32,14 +32,15 @@ export class CreateCustomer {
 
   async create(input: CreateCustomerInput, staffId: string): Promise<CustomerLookup> {
     const phone = normalizeIndianMobile(input.phone);
-    const firstName = input.firstName.trim();
-    if (!firstName) throw new DomainError("CUSTOMER_INVALID", "First name is required.");
+    const checked = checkCustomerDetails(input);
+    if (!checked.ok) throw new DomainError("CUSTOMER_INVALID", Object.values(checked.fields).join(" "), { fields: checked.fields });
+    const { firstName, lastName, email } = checked.value;
 
     // A second request for the same phone while the first is writing waits for it, then takes the normal path:
     // the customer now exists, so it is refused as a duplicate; if the first failed, it simply tries itself.
     const running = this.inflight.get(phone);
     if (running) await running.catch(() => undefined);
-    const run = this.createOnce({ phone, firstName, lastName: input.lastName?.trim() ?? "", ...(input.email?.trim() ? { email: input.email.trim() } : {}) });
+    const run = this.createOnce({ phone, firstName, lastName, ...(email ? { email } : {}) });
     this.inflight.set(phone, run);
     let customer: Customer;
     try {

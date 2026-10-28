@@ -15,7 +15,10 @@ export interface Principal {
 }
 
 export type Permission =
+  | "customer:view" // list, search and open customers, their prescriptions and bills
   | "customer:create"
+  | "customer:update" // edit contact details (never the phone)
+  | "prescription:create" // enter a prescription for a customer; lens validation rules are a separate, unassigned responsibility
   | "billing:use" // carts, offers, checkout, resume/cancel of an unpaid bill, recent bills
   | "refund:create"
   | "discount:manager" // apply a manager discount (the approver is the signed-in manager)
@@ -28,7 +31,7 @@ export type Permission =
  * Reports are manager-only until the client confirms whether salespeople may see them on screen.
  * Store managers can do everything a salesperson can (they bill too).
  */
-const SALES: readonly Permission[] = ["customer:create", "billing:use", "refund:create"];
+const SALES: readonly Permission[] = ["customer:view", "customer:create", "customer:update", "prescription:create", "billing:use", "refund:create"];
 export const PERMISSIONS: Record<Role, ReadonlySet<Permission>> = {
   salesperson: new Set(SALES),
   store_manager: new Set<Permission>([...SALES, "discount:manager", "report:view", "report:download"]),

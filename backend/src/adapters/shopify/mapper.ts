@@ -10,6 +10,7 @@ export function toCustomer(c: ShopifyCustomer): Customer {
     firstName: c.first_name ?? "",
     lastName: c.last_name ?? "",
     phone: c.phone ?? "",
+    ...(c.email ? { email: c.email } : {}),
     tags: c.tags.split(",").map((t) => t.trim()).filter(Boolean),
     lifetimeSpendPaise: fromShopifyMoney(c.total_spent),
     ordersCount: c.orders_count,

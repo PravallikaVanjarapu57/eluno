@@ -1,7 +1,7 @@
 import type { ErrorRequestHandler } from "express";
 import { ZodError, z } from "zod";
 import { DomainError, type DomainErrorCode } from "../domain/errors.js";
-import { CustomerOutcomeUnknown } from "../ports/index.js";
+import { CustomerOutcomeUnknown, PrescriptionOutcomeUnknown } from "../ports/index.js";
 import { AmbiguousWriteError, HttpError, RetriesExhaustedError, UpstreamShapeError } from "../adapters/http/client.js";
 
 const STATUS: Record<DomainErrorCode, number> = {
@@ -30,6 +30,8 @@ const STATUS: Record<DomainErrorCode, number> = {
   FRAME_NOT_RX_ABLE: 422,
   RX_REQUIRED: 422,
   RX_NOT_FOUND: 404,
+  RX_INVALID: 422,
+  RX_SELECTION_REQUIRED: 409,
   RX_NOT_IN_FORCE: 422,
   RX_UNAVAILABLE: 503,
   LENS_RX_MISMATCH: 422,
@@ -60,6 +62,11 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
   if (err instanceof CustomerOutcomeUnknown) {
     console.error(err.message);
     res.status(502).json({ code: "UPSTREAM_UNAVAILABLE", message: "Shopify did not confirm the new customer. Look the phone number up before trying again: they may already have been created." });
+    return;
+  }
+  if (err instanceof PrescriptionOutcomeUnknown) {
+    console.error(err.message);
+    res.status(502).json({ code: "UPSTREAM_UNAVAILABLE", message: "The store tool did not confirm the prescription. Open the customer's prescription list to check before entering it again." });
     return;
   }
   if (err instanceof UpstreamShapeError) {

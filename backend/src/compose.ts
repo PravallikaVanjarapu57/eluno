@@ -17,6 +17,8 @@ import { systemClock } from "./adapters/clock.js";
 import { Reference } from "./application/reference.js";
 import { CreateCustomer } from "./application/createCustomer.js";
 import { LookupCustomer } from "./application/lookupCustomer.js";
+import { Customers } from "./application/customers.js";
+import { Prescriptions } from "./application/prescriptions.js";
 import { Carts } from "./application/carts.js";
 import { TaxTable } from "./domain/tax.js";
 import { AuthService } from "./application/auth.js";
@@ -71,8 +73,11 @@ export function compose(env: Env): Composed {
     db,
     lookupCustomer,
     createCustomer: new CreateCustomer({ customers: shopify, lookup: lookupCustomer, audit, clock }),
+    customers: new Customers({ customers: shopify, prescriptions: smt, bills, audit, clock }),
+    prescriptions: new Prescriptions({ customers: shopify, source: smt, registry: smt, audit, clock }),
     carts: new Carts({
       lookup: lookupCustomer,
+      customers: shopify,
       prescriptions: smt,
       catalog: shopify,
       stock: shopify,
