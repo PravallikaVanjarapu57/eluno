@@ -1,3 +1,4 @@
+import path from "node:path";
 import { describeUpstreams, envWarnings, loadEnv } from "./config/env.js";
 import { compose } from "./compose.js";
 import { createApp } from "./api/app.js";
@@ -6,7 +7,7 @@ const env = loadEnv();
 for (const w of envWarnings(env)) console.warn(`warning: ${w}`);
 const deps = compose(env);
 
-const server = createApp(deps).listen(env.PORT, () => {
+const server = createApp(deps, { staticDir: path.resolve(env.FRONTEND_DIR) }).listen(env.PORT, () => {
   console.log(`eluno-till API on http://localhost:${env.PORT}`);
   console.log(`  upstreams: ${describeUpstreams(env)}`);
   console.log(`  till db: ${env.DB_PATH}`);

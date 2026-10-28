@@ -14,6 +14,7 @@ import { Refunds } from "./application/refunds.js";
 import { DayEnd } from "./application/dayEnd.js";
 import { SqliteCreditNoteRepository } from "./adapters/sqlite/creditNoteRepo.js";
 import { systemClock } from "./adapters/clock.js";
+import { Reference } from "./application/reference.js";
 import { LookupCustomer } from "./application/lookupCustomer.js";
 import { Carts } from "./application/carts.js";
 import { TaxTable } from "./domain/tax.js";
@@ -75,5 +76,6 @@ export function compose(env: Env): AppDeps {
       refundReasons: config.reasonCodes.refund,
     }),
     dayEnd: new DayEnd({ ledger: shopify, stores: shopify, bills, creditNotes, clock }),
+    reference: new Reference({ stores: shopify, frames: shopify, staff, reasonCodes: config.reasonCodes }),
   };
 }

@@ -59,6 +59,14 @@ export class Checkout {
     return bill;
   }
 
+  /** Most recent bills for a store, newest first; lets a refund screen pick an invoice without typing it. */
+  recent(storeCode: string, limit: number): Bill[] {
+    return this.d.bills
+      .listForStore(storeCode)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(0, limit);
+  }
+
   async checkout(cartId: string, paymentMethod: PaymentMethod): Promise<Bill> {
     // Pressing "charge" twice (or a client retry after a timeout) resumes the same bill.
     const existing = this.d.bills.liveForCart(cartId);

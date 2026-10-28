@@ -3,7 +3,7 @@ import type { Customer } from "../../domain/customer.js";
 import type { Store } from "../../domain/store.js";
 import type { Bill, PostedOrder } from "../../domain/bill.js";
 import { parseInvoiceSeq } from "../../domain/bill.js";
-import { OrderOutcomeUnknown, OrderRejected, type Catalog, type CustomerDirectory, type OrderSink, type SalesLedger, type StockLevels, type StoreDirectory } from "../../ports/index.js";
+import { OrderOutcomeUnknown, OrderRejected, type Catalog, type CustomerDirectory, type FrameListing, type OrderSink, type SalesLedger, type StockLevels, type StoreDirectory, type StoreListing } from "../../ports/index.js";
 import { AmbiguousWriteError, HttpError, parseUpstream, RetriesExhaustedError, type HttpClient } from "../http/client.js";
 import type { CreditNote } from "../../domain/refund.js";
 import type { Paise } from "../../domain/money.js";
@@ -38,9 +38,10 @@ class Memo<T> {
 }
 
 /** Shopify Admin REST adapter. The only place in the codebase that knows Shopify's shapes. */
-export class ShopifyGateway implements CustomerDirectory, Catalog, StockLevels, StoreDirectory, OrderSink, SalesLedger {
+export class ShopifyGateway implements CustomerDirectory, Catalog, StockLevels, StoreDirectory, StoreListing, FrameListing, OrderSink, SalesLedger {
   private readonly lenses = new Memo<LensItem[]>(5 * 60_000);
   private readonly locations = new Memo<Store[]>(10 * 60_000);
+  private readonly frames = new Memo<{ item: CatalogItem; inventoryItemId: number | null }[]>(5 * 60_000);
   // Stock is keyed by inventory item, which the domain does not know about; remember it per variant.
   private readonly inventoryItemOf = new Map<string, number | null>();
 
@@ -85,11 +86,38 @@ export class ShopifyGateway implements CustomerDirectory, Catalog, StockLevels, 
     return inventory_levels[0]?.available ?? 0;
   }
 
-  async getStore(code: string): Promise<Store | null> {
-    const stores = await this.locations.get(async () => {
+  async listStores(): Promise<Store[]> {
+    return (await this.allStores()).filter((s) => s.active);
+  }
+
+  async listFrames(store: Store): Promise<(FrameItem & { available: number })[]> {
+    const frames = await this.frames.get(async () => {
+      const res = await this.http.get("products.json", { product_type: "Frame", limit: 250 });
+      const { products } = parseUpstream("shopify", "product list", ProductsResponseSchema, res.body);
+      return products.flatMap((p) => p.variants.map((v) => ({ item: toCatalogItem(p, v), inventoryItemId: v.inventory_item_id })));
+    });
+    // One stock read for the whole store rather than one per frame.
+    const res = await this.http.get("inventory_levels.json", { location_ids: store.locationRef });
+    const { inventory_levels } = parseUpstream("shopify", "inventory levels", InventoryLevelsResponseSchema, res.body);
+    const stock = new Map(inventory_levels.map((l) => [l.inventory_item_id, l.available]));
+    const out: (FrameItem & { available: number })[] = [];
+    for (const { item, inventoryItemId } of frames) {
+      if (item.kind !== "frame" || !item.sellable) continue;
+      this.inventoryItemOf.set(item.variantId, inventoryItemId);
+      out.push({ ...item, available: (inventoryItemId === null ? undefined : stock.get(inventoryItemId)) ?? 0 });
+    }
+    return out;
+  }
+
+  private allStores(): Promise<Store[]> {
+    return this.locations.get(async () => {
       const { locations } = parseUpstream("shopify", "location list", LocationsResponseSchema, (await this.http.get("locations.json")).body);
       return locations.map(toStore);
     });
+  }
+
+  async getStore(code: string): Promise<Store | null> {
+    const stores = await this.allStores();
     return stores.find((s) => s.code === code) ?? null;
   }
 

@@ -18,6 +18,8 @@ const EnvSchema = z
     DB_PATH: z.string().default("data/till.db"),
     CONFIG_DIR: z.string().default("config"),
     // Pins the business date (YYYY-MM-DD, IST) for demos against the seed data; unset = today in IST.
+    // Built frontend to serve at `/` (single origin with the API under /api). Ignored when the folder is missing.
+    FRONTEND_DIR: z.string().default("../frontend/dist"),
     TILL_TODAY: optional(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)),
   })
   .transform((e) => ({

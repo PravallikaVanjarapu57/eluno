@@ -51,8 +51,24 @@ export function checkoutRoute(checkout: Checkout): Router {
   return r;
 }
 
+const ListQuery = z.object({ store: z.string().min(1), limit: z.coerce.number().int().min(1).max(100).default(25) });
+
 export function billRoutes(checkout: Checkout): Router {
   const r = Router();
+  // GET /bills?store=HSR&limit=25 -> recent bills for the store, newest first
+  r.get("/", (req, res) => {
+    const q = ListQuery.parse(req.query);
+    res.json(
+      checkout.recent(q.store, q.limit).map((b) => ({
+        invoiceNo: b.invoiceNo,
+        status: b.status,
+        customerName: b.customer.name,
+        payablePaise: b.totals.payablePaise,
+        paymentMethod: b.paymentMethod,
+        createdAt: b.createdAt,
+      })),
+    );
+  });
   // Invoice numbers contain slashes (ELU/HSR/FY26/00001): clients URL-encode them.
   r.get("/:invoiceNo", (req, res) => {
     res.json(billView(checkout.get(req.params.invoiceNo)));

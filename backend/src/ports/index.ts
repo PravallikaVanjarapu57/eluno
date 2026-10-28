@@ -34,6 +34,16 @@ export interface StoreDirectory {
   getStore(code: string): Promise<Store | null>;
 }
 
+export interface StoreListing {
+  /** Active, billing stores. */
+  listStores(): Promise<Store[]>;
+}
+
+export interface FrameListing {
+  /** Sellable frames with the units available at this store. */
+  listFrames(store: Store): Promise<(FrameItem & { available: number })[]>;
+}
+
 export interface StaffDirectory {
   listByStore(storeCode: string): Promise<Staff[]>;
 }
