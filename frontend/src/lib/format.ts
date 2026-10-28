@@ -24,3 +24,17 @@ export function dateTime(iso: string): string {
 }
 
 export const label = (s: string) => s.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
+
+/** 2026-10-28 -> "28 Oct 2026": month spelled out, so day and month cannot be swapped by a reader. */
+export function dateIN(iso: string): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString("en-IN", { timeZone: "UTC", day: "numeric", month: "short", year: "numeric" });
+}
+
+/** The default expiry the server applies: 365 days after the test date, exactly as backend/src/domain/prescription.ts computes it. */
+export function addYear(iso: string): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return iso;
+  d.setUTCDate(d.getUTCDate() + 365);
+  return d.toISOString().slice(0, 10);
+}

@@ -5,7 +5,8 @@ import { CHANNELS, type Bill, type BillSummary, type Cart, type Channel, type Cu
 import { BillStatus } from "../components/BillStatus";
 import { PrescriptionCard } from "../components/PrescriptionCard";
 import { SaleBuilder } from "../components/SaleBuilder";
-import { Banner, Card, ErrorBanner, Field, Pill, Spinner } from "../components/ui";
+import { Banner, Card, ConfirmDialog, ErrorBanner, Field, Pill, Spinner } from "../components/ui";
+import { Check, Search, ShoppingCart, UserPlus } from "lucide-react";
 import { dateTime, money } from "../lib/format";
 import { load, save } from "../lib/storage";
 import { NewCustomer } from "../components/NewCustomer";
@@ -23,6 +24,7 @@ export default function TillPage() {
   const [cart, setCart] = useState<Cart | null>(null);
   const [bill, setBill] = useState<Bill | null>(null);
   const [creating, setCreating] = useState(false);
+  const [confirmAbandon, setConfirmAbandon] = useState(false);
   const [busy, setBusy] = useState<"lookup" | "start" | "restore" | null>(() => (load<SavedSale>(SAVED) ? "restore" : null));
   const [error, setError] = useState<unknown>(null);
   const guard = useRef(false);
@@ -130,8 +132,17 @@ export default function TillPage() {
             {lookup.flags.priority && <Pill tone="warn">Priority customer</Pill>}
             {lookup.flags.campaigns.map((c) => <Pill key={c} tone="info">Campaign: {c.replace(/_/g, " ")}</Pill>)}
           </div>
-          <button onClick={() => { if (confirm("Abandon this sale and start over? The cart stays on the server but will not be shown here.")) reset(); }}>Abandon sale</button>
+          <button onClick={() => setConfirmAbandon(true)}>Abandon sale</button>
         </div>
+        <ol className="steps" aria-label="Sale progress">
+          <li className="done"><Check size={14} className="icon" aria-hidden />Customer</li>
+          <li className={cart.selectedRxId || lookup.prescription.status === "valid" ? "done" : "now"}>{cart.selectedRxId || lookup.prescription.status === "valid" ? <Check size={14} className="icon" aria-hidden /> : null}Prescription</li>
+          <li className={cart.pairs.length > 0 ? "done" : "now"}>{cart.pairs.length > 0 ? <Check size={14} className="icon" aria-hidden /> : null}Frame and lens</li>
+          <li className={cart.pairs.length > 0 ? "now" : ""}>Payment</li>
+        </ol>
+        <ConfirmDialog open={confirmAbandon} title="Abandon this sale?" confirmLabel="Abandon sale" tone="danger" onCancel={() => setConfirmAbandon(false)} onConfirm={() => { setConfirmAbandon(false); reset(); }}>
+          The cart stays on the server but will not be shown on this till again.
+        </ConfirmDialog>
         <ErrorBanner error={error} />
         <SaleBuilder cart={cart} lookup={lookup} onCart={setCart} onBill={onBill} />
       </div>
@@ -148,14 +159,14 @@ export default function TillPage() {
       <Card title="Customer">
         <form className="inline" onSubmit={(e) => { e.preventDefault(); void doLookup(); }}>
           <div style={{ flex: "1 1 240px" }}><Field label="Customer mobile number"><input inputMode="tel" autoFocus placeholder="e.g. 9000000005" value={phone} onChange={(e) => setPhone(e.target.value)} /></Field></div>
-          <button className="primary" type="submit" disabled={!phone.trim() || busy === "lookup"} style={{ alignSelf: "flex-end" }}>{busy === "lookup" ? "Looking up…" : "Look up"}</button>
+          <button className="primary" type="submit" disabled={!phone.trim() || busy === "lookup"} style={{ alignSelf: "flex-end" }}><Search size={16} className="icon" aria-hidden />{busy === "lookup" ? "Looking up…" : "Look up"}</button>
         </form>
         {error instanceof ApiError && error.code === "CUSTOMER_NOT_FOUND" && can("customer:create") ? (
           <Banner tone="info" title="No customer with that number" actions={<button className="primary" onClick={() => { setError(null); setCreating(true); }}>Create this customer</button>}>{error.message}</Banner>
         ) : (
           <ErrorBanner error={error} actions={error instanceof ApiError && error.outcomeUnknown ? <button onClick={doLookup}>Retry</button> : undefined} />
         )}
-        {can("customer:create") && !creating && !lookup && <button className="link" style={{ justifySelf: "start" }} onClick={() => setCreating(true)}>New customer…</button>}
+        {can("customer:create") && !creating && !lookup && <button className="link" style={{ justifySelf: "start" }} onClick={() => setCreating(true)}><UserPlus size={16} className="icon" aria-hidden />New customer…</button>}
       </Card>
 
       {creating && (
@@ -185,7 +196,7 @@ export default function TillPage() {
               <Field label="Billed by"><input readOnly value={user?.name ?? ""} /></Field>
               <Field label="Sales channel"><select value={channel} onChange={(e) => setChannel(e.target.value as Channel)}>{CHANNELS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</select></Field>
             </div>
-            <button className="primary big" disabled={!ready || busy === "start"} onClick={start}>{busy === "start" ? "Starting…" : "Start sale"}</button>
+            <button className="primary big" disabled={!ready || busy === "start"} onClick={start}><ShoppingCart size={18} className="icon" aria-hidden />{busy === "start" ? "Starting…" : "Start sale"}</button>
           </Card>
         </>
       )}

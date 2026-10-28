@@ -3,7 +3,8 @@ import { api } from "../api/endpoints";
 import { ApiError } from "../api/client";
 import type { EyeEntry, RxView } from "../api/types";
 import { newRef } from "../lib/useLoad";
-import { todayIST } from "../lib/format";
+import { dateIN, addYear, todayIST } from "../lib/format";
+import { Loader2, Save } from "lucide-react";
 import { Banner, Card, ErrorBanner, Field } from "./ui";
 
 type EyeText = { sph: string; cyl: string; axis: string; add: string };
@@ -34,21 +35,37 @@ const toEntry = (e: EyeText): EyeEntry => {
   return { ...(sph === null ? {} : { sph }), cyl: parse(e.cyl) ?? 0, axis: parse(e.axis), add: parse(e.add) };
 };
 
-function EyeFields({ eyeKey, title, value, onChange, errors, touched }: { eyeKey: "od" | "os"; title: string; value: EyeText; onChange(v: EyeText): void; errors: Record<string, string>; touched: boolean }) {
-  const set = (k: keyof EyeText) => (ev: React.ChangeEvent<HTMLInputElement>) => onChange({ ...value, [k]: ev.target.value });
-  const err = (k: keyof EyeText) => errors[`${eyeKey}.${k}`];
-  const cell = (k: keyof EyeText, label: string, hint: string) => (
-    <Field label={`${label}`} error={(touched ? err(k) : undefined) ?? errors[`server.${eyeKey}.${k}`]}>
-      <input aria-label={`${title} ${label}`} inputMode="decimal" placeholder={hint} value={value[k]} onChange={set(k)} aria-invalid={!!(touched && err(k))} />
-    </Field>
-  );
+const COLS: { key: keyof EyeText; label: string; unit: string; hint: string }[] = [
+  { key: "sph", label: "SPH", unit: "D", hint: "-2.25" },
+  { key: "cyl", label: "CYL", unit: "D", hint: "-0.75" },
+  { key: "axis", label: "AXIS", unit: "°", hint: "90" },
+  { key: "add", label: "ADD", unit: "D", hint: "+1.50" },
+];
+
+/** Both eyes in one grid so SPH, CYL, AXIS and ADD line up down the page; on a narrow screen each eye becomes its own two-column block. */
+function OpticalGrid({ od, os, onOd, onOs, errors, touched }: { od: EyeText; os: EyeText; onOd(v: EyeText): void; onOs(v: EyeText): void; errors: Record<string, string>; touched: boolean }) {
+  const eyes = [
+    { key: "od" as const, title: "Right eye (OD)", short: "OD", sub: "Right", value: od, set: onOd },
+    { key: "os" as const, title: "Left eye (OS)", short: "OS", sub: "Left", value: os, set: onOs },
+  ];
   return (
-    <Card title={title}>
-      <div className="rx-fields">
-        {cell("sph", "SPH", "-2.25")}
-        {cell("cyl", "CYL", "-0.75")}
-        {cell("axis", "AXIS", "90")}
-        {cell("add", "ADD", "+1.50")}
+    <Card title="Optical measurements" actions={<span className="muted small">Powers in dioptres (D), steps of 0.25</span>}>
+      <div className="rx-grid" role="group" aria-label="Optical measurements">
+        <span className="rx-head" aria-hidden />
+        {COLS.map((c) => <span key={c.key} className="rx-head" aria-hidden>{c.label} ({c.unit})</span>)}
+        {eyes.map((eye) => (
+          <div key={eye.key} style={{ display: "contents" }}>
+            <div className="rx-eye"><span>{eye.short}</span><small>{eye.sub}</small></div>
+            {COLS.map((c) => {
+              const err = (touched ? errors[`${eye.key}.${c.key}`] : undefined) ?? errors[`server.${eye.key}.${c.key}`];
+              return (
+                <Field key={c.key} label={`${c.label} (${c.unit})`} error={err}>
+                  <input aria-label={`${eye.title} ${c.label}`} inputMode="decimal" placeholder={c.hint} value={eye.value[c.key]} onChange={(ev) => eye.set({ ...eye.value, [c.key]: ev.target.value })} aria-invalid={!!err} />
+                </Field>
+              );
+            })}
+          </div>
+        ))}
       </div>
     </Card>
   );
@@ -119,20 +136,19 @@ export function PrescriptionForm({ customerId, customerName, onSaved, onCancel }
     <form className="stack" noValidate onSubmit={(ev) => { ev.preventDefault(); void submit(); }} aria-label={`New prescription for ${customerName}`}>
       <Card title="Test details">
         <div className="fields">
-          <Field label="Test date *" error={fieldMsg("testedOn")}>
+          <Field label="Test date *" hint={testedOn ? `Recorded as ${dateIN(testedOn)}` : "Day of the eye test"} error={fieldMsg("testedOn")}>
             <input type="date" max={today} value={testedOn} onChange={(ev) => setTestedOn(ev.target.value)} aria-invalid={!!fieldMsg("testedOn")} />
           </Field>
-          <Field label="Valid until" hint="Leave empty for one year after the test." error={fieldMsg("validUntil")}>
+          <Field label="Valid until" hint={validUntil ? `Expires ${dateIN(validUntil)}` : testedOn ? `Left empty: expires ${dateIN(addYear(testedOn))}, one year after the test` : "Left empty: one year after the test"} error={fieldMsg("validUntil")}>
             <input type="date" min={testedOn || undefined} value={validUntil} onChange={(ev) => setValidUntil(ev.target.value)} aria-invalid={!!fieldMsg("validUntil")} />
           </Field>
-          <Field label="PD (mm)" hint="Optional" error={fieldMsg("pd")}>
+          <Field label="PD (mm)" hint="Optional, 40 to 80 mm" error={fieldMsg("pd")}>
             <input inputMode="decimal" placeholder="62" value={pd} onChange={(ev) => setPd(ev.target.value)} aria-invalid={!!fieldMsg("pd")} />
           </Field>
         </div>
       </Card>
 
-      <EyeFields eyeKey="od" title="Right eye (OD)" value={od} onChange={setOd} errors={withServer} touched={touched} />
-      <EyeFields eyeKey="os" title="Left eye (OS)" value={os} onChange={setOs} errors={withServer} touched={touched} />
+      <OpticalGrid od={od} os={os} onOd={setOd} onOs={setOs} errors={withServer} touched={touched} />
 
       <Card title="Notes">
         <Field label="Prescribed by, remarks" hint="Optional, up to 500 characters. Entered prescriptions are recorded as external: confirm with the optometrist." error={fieldMsg("notes")}>
@@ -146,7 +162,7 @@ export function PrescriptionForm({ customerId, customerName, onSaved, onCancel }
         : <ErrorBanner error={error} />}
 
       <div className="inline">
-        <button className="primary big" type="submit" disabled={busy}>{busy ? "Saving…" : "Save prescription"}</button>
+        <button className="primary big" type="submit" disabled={busy} aria-busy={busy}>{busy ? <Loader2 size={18} className="icon icon-spin" aria-hidden /> : <Save size={18} className="icon" aria-hidden />}{busy ? "Saving…" : "Save prescription"}</button>
         <button type="button" onClick={onCancel}>Cancel</button>
       </div>
     </form>

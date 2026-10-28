@@ -123,6 +123,12 @@ Sign in (above), then **New sale**. Seed customers: `9000000005` (priority, vali
 are invalid for them), `9000000000` (expired prescription), or create your own. Refunds take an invoice number like `ELU/HSR/FY26/00003`
 (or pick a recent bill); the numbers are shown after each sale. Managers also get **Day-end**.
 
+## UI design system
+
+Styling is one stylesheet, `frontend/src/styles.css`, built on CSS variables (colour, type, spacing, radii, shadows, control height, focus ring, motion, z-index). Components use the tokens, not raw values.
+Icons come from `lucide-react` (the only UI dependency added; tree-shaken SVG). Shared pieces live in `components/ui.tsx`: `Banner`, `Pill` (icon plus words, never colour alone), `Field` (label, hint, error wired to the control),
+`EmptyState`, `PageHead`, `BackLink`, `ConfirmDialog` (native `<dialog>`) and `ToastProvider`. No web fonts are loaded: the system font stack is used.
+
 ## Checks
 
 ```bash

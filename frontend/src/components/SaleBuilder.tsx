@@ -17,7 +17,7 @@ export function SaleBuilder({ cart, lookup, onCart, onBill }: {
   onBill(b: Bill): void;
 }) {
   return (
-    <div className="grid-2">
+    <div className="grid-sale">
       <div className="stack">
         {cart.rxSelection === "explicit" && (
           cart.selectedRxId
@@ -27,7 +27,7 @@ export function SaleBuilder({ cart, lookup, onCart, onBill }: {
         <PrescriptionCard rx={lookup.prescription} />
         <ItemPicker cart={cart} lookup={lookup} onCart={onCart} />
       </div>
-      <div className="stack">
+      <div className="stack sticky">
         <CartAndQuote cart={cart} onCart={onCart} onBill={onBill} />
       </div>
     </div>
@@ -120,7 +120,7 @@ function ItemPicker({ cart, lookup, onCart }: { cart: Cart; lookup: CustomerLook
         </div>
       </Card>
 
-      <Card title="2 · Lens" actions={matrix && <label className="inline small"><input type="checkbox" style={{ width: 20, minHeight: 20 }} checked={onlyValid} onChange={(e) => setOnlyValid(e.target.checked)} /> Valid only</label>}>
+      <Card title="2 · Lens" actions={matrix && <label className="inline small"><input type="checkbox" checked={onlyValid} onChange={(e) => setOnlyValid(e.target.checked)} /> Valid only</label>}>
         {rxStatus !== "valid" ? (
           <Banner tone="warn" title="No lens can be billed">
             {lookup.prescription.status === "expired" ? lookup.prescription.reason : lookup.prescription.status === "none_on_file" || lookup.prescription.status === "unavailable" ? lookup.prescription.reason : ""} You can still sell the frame on its own.

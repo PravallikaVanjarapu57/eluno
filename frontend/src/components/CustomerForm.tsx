@@ -1,3 +1,4 @@
+import { Loader2, Save } from "lucide-react";
 import { useRef, useState } from "react";
 import { api } from "../api/endpoints";
 import { ApiError } from "../api/client";
@@ -127,7 +128,7 @@ export function CustomerForm(props: Props) {
       {notCreated && <Banner tone="info" title="Not created">Shopify has no customer with this number, so nothing was saved. You can create them again.</Banner>}
 
       <div className="inline">
-        <button className="primary big" type="submit" disabled={busy}>{busy ? "Saving…" : editing ? "Save changes" : "Create customer"}</button>
+        <button className="primary big" type="submit" disabled={busy} aria-busy={busy}>{busy ? <Loader2 size={18} className="icon icon-spin" aria-hidden /> : <Save size={18} className="icon" aria-hidden />}{busy ? "Saving…" : editing ? "Save changes" : "Create customer"}</button>
         <button type="button" onClick={props.onCancel}>Cancel</button>
       </div>
     </form>

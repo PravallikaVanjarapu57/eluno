@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { api } from "../api/endpoints";
 import { ApiError } from "../api/client";
 import type { Cart, CustomerView, RxView } from "../api/types";
 import { RxRecord } from "../components/RxParts";
-import { Banner, Card, ErrorBanner, Spinner } from "../components/ui";
+import { BackLink, Banner, Card, ConfirmDialog, ErrorBanner, PageHead, Spinner } from "../components/ui";
 import { load, save } from "../lib/storage";
 import { useAuth } from "../state/auth";
 import { useSession } from "../state/session";
@@ -34,6 +34,7 @@ export default function StartSalePage() {
   const [error, setError] = useState<unknown>(null);
   const [saving, setSaving] = useState<string | null>(null);
   const started = useRef(false);
+  const [confirmReplace, setConfirmReplace] = useState(false);
 
   const start = useCallback(async (view: CustomerView) => {
     const saved = load<SavedSale>(SAVED);
@@ -96,7 +97,8 @@ export default function StartSalePage() {
   }
 
   async function replaceSale() {
-    if (!customer || !window.confirm("Abandon the other unfinished sale and start this one? The other cart stays on the server but will not be shown on this till.")) return;
+    if (!customer) return;
+    setConfirmReplace(false);
     save(SAVED, null);
     started.current = true;
     setError(null);
@@ -104,7 +106,7 @@ export default function StartSalePage() {
   }
 
   if (!can("billing:use")) return <div className="page"><Banner tone="warn" title="Your role cannot bill" /></div>;
-  if (!storeCode) return <div className="page"><Link to={`/customers/${id}`}>← Customer</Link><Banner tone="info" title="Choose a store">Select your store at the top of the screen to start a sale.</Banner></div>;
+  if (!storeCode) return <div className="page"><BackLink to={`/customers/${id}`}>Customer</BackLink><Banner tone="info" title="Choose a store">Select your store at the top of the screen to start a sale.</Banner></div>;
 
   const name = customer?.name ?? "customer";
   const selected = cart?.selectedRxId ?? null;
@@ -112,8 +114,11 @@ export default function StartSalePage() {
 
   return (
     <div className="page">
-      <Link to={`/customers/${id}`}>← {name}</Link>
-      <div className="between"><h1>Start sale · {name}</h1>{store && <span className="muted">{store.name}</span>}</div>
+      <BackLink to={`/customers/${id}`}>{name}</BackLink>
+      <PageHead title={`Start sale · ${name}`} sub={store?.name} />
+      <ConfirmDialog open={confirmReplace} title="Abandon the other sale?" confirmLabel="Abandon and start this one" tone="danger" onCancel={() => setConfirmReplace(false)} onConfirm={() => void replaceSale()}>
+        The other cart stays on the server but will not be shown on this till again.
+      </ConfirmDialog>
       {notice && <Banner tone="success">{notice}</Banner>}
       <ErrorBanner error={error} actions={<button onClick={() => { started.current = true; void boot(); }}>Retry</button>} />
       {phase.kind === "loading" && !error && <Spinner label="Preparing the sale…" />}
@@ -122,7 +127,7 @@ export default function StartSalePage() {
         <Banner tone="warn" title={`A sale for ${phase.cart.customer.name} is still open on this till`} actions={
           <>
             <button className="primary" onClick={() => nav("/")}>Resume that sale</button>
-            <button onClick={() => void replaceSale()}>Abandon it and start this one</button>
+            <button onClick={() => setConfirmReplace(true)}>Abandon it and start this one</button>
           </>
         }>It has {phase.cart.pairs.length} item{phase.cart.pairs.length === 1 ? "" : "s"} in it. Finish or abandon it before starting another.</Banner>
       )}

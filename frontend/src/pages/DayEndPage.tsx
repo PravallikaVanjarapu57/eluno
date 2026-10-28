@@ -1,3 +1,4 @@
+import { BarChart3, Download } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api/endpoints";
 import { ApiError } from "../api/client";
@@ -74,14 +75,14 @@ function DayEnd() {
         <form className="fields" onSubmit={(e) => { e.preventDefault(); void run(); }}>
           <Field label="Store"><select value={store} onChange={(e) => setStore(e.target.value)}><option value="">Select store…</option>{stores?.map((s) => <option key={s.code} value={s.code}>{s.name} ({s.code})</option>)}</select></Field>
           <Field label="Business date (IST)"><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
-          <div style={{ alignSelf: "end" }}><button className="primary" type="submit" disabled={!store || !date || loading}>{loading ? "Loading…" : "Show report"}</button></div>
+          <div style={{ alignSelf: "end" }}><button className="primary" type="submit" disabled={!store || !date || loading}><BarChart3 size={16} className="icon" aria-hidden />{loading ? "Loading…" : "Show report"}</button></div>
         </form>
         <ErrorBanner error={error} actions={error instanceof ApiError && error.outcomeUnknown ? <button onClick={run}>Retry</button> : undefined} />
         {loading && <Spinner label="Reading orders from Shopify and reconciling with the till…" />}
       </Card>
       {report && can("report:download") && (
         <div className="inline no-print">
-          <button className="primary" onClick={exportCsv} disabled={exporting}>{exporting ? "Preparing…" : `Download CSV · ${report.storeCode} ${report.date}`}</button>
+          <button className="primary" onClick={exportCsv} disabled={exporting}><Download size={16} className="icon" aria-hidden />{exporting ? "Preparing…" : `Download CSV · ${report.storeCode} ${report.date}`}</button>
           <span className="small muted">The same figures as this report, as a spreadsheet file.</span>
         </div>
       )}

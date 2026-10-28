@@ -1,3 +1,4 @@
+import { Printer } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/endpoints";
@@ -119,7 +120,7 @@ export function BillStatus({ bill, onBill, onNewSale, onBackToCart }: {
 
       {(bill.status === "POSTED" || bill.status === "CHARGED_NOT_POSTED") && (
         <div className="inline no-print">
-          <button className="primary big" onClick={() => window.print()}>Print invoice</button>
+          <button className="primary big" onClick={() => window.print()}><Printer size={18} className="icon" aria-hidden />Print invoice</button>
           <button className="big" onClick={onNewSale}>New sale</button>
           {bill.status === "POSTED" && <Link className="btn big" to={`/refunds?invoice=${encodeURIComponent(bill.invoiceNo)}`}>Refund this bill…</Link>}
         </div>

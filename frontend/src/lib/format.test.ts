@@ -17,3 +17,15 @@ describe("format", () => {
     expect(todayIST(new Date("2026-10-23T20:00:00Z"))).toBe("2026-10-24");
   });
 });
+
+import { addYear, dateIN } from "./format";
+describe("expiry hint dates", () => {
+  it("adds the same 365 days the server does, including across a leap day", () => {
+    expect(addYear("2026-10-28")).toBe("2027-10-28");
+    expect(addYear("2027-10-28")).toBe("2028-10-27");
+    expect(addYear("2024-02-29")).toBe("2025-02-28");
+  });
+  it("spells the month so day and month cannot be confused", () => {
+    expect(dateIN("2026-10-28")).toBe("28 Oct 2026");
+  });
+});

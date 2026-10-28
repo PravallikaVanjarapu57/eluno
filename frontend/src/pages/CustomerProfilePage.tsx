@@ -1,8 +1,9 @@
+import { Eye, FilePlus2, Pencil, Phone, Receipt, ShoppingCart } from "lucide-react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { api } from "../api/endpoints";
 import { ApiError } from "../api/client";
 import { RxRecord } from "../components/RxParts";
-import { Banner, Card, ErrorBanner, Pill, Spinner } from "../components/ui";
+import { BackLink, Banner, Card, EmptyState, ErrorBanner, PageHead, Pill, Spinner } from "../components/ui";
 import { dateTime, money } from "../lib/format";
 import { useLoad } from "../lib/useLoad";
 import { useAuth } from "../state/auth";
@@ -25,7 +26,7 @@ export default function CustomerProfilePage() {
     const missing = customer.error instanceof ApiError && customer.error.status === 404;
     return (
       <div className="page">
-        <Link to="/customers">← Customers</Link>
+        <BackLink to="/customers">Customers</BackLink>
         {missing ? <Banner tone="warn" title="Customer not found">There is no customer with this id. They may have been removed in Shopify.</Banner>
           : <ErrorBanner error={customer.error} actions={<button onClick={customer.reload}>Retry</button>} />}
       </div>
@@ -37,20 +38,17 @@ export default function CustomerProfilePage() {
 
   return (
     <div className="page">
-      <Link to="/customers">← Customers</Link>
-      <div className="between">
-        <h1>{name}</h1>
-        <div className="inline">
-          {can("prescription:create") && <button onClick={() => nav(`/customers/${c.id}/prescriptions/new`)}>Add prescription</button>}
-          {can("customer:update") && <button onClick={() => nav(`/customers/${c.id}/edit`)}>Edit customer</button>}
-          {can("billing:use") && <button className="primary big" disabled={!storeCode} title={storeCode ? undefined : "Choose a store first"} onClick={() => nav(`/customers/${c.id}/sale`)}>Start sale</button>}
-        </div>
-      </div>
+      <BackLink to="/customers">Customers</BackLink>
+      <PageHead title={name} sub={<span className="mono">{c.phone}</span>} actions={<>
+        {can("prescription:create") && <button onClick={() => nav(`/customers/${c.id}/prescriptions/new`)}><FilePlus2 size={16} className="icon" aria-hidden />Add prescription</button>}
+        {can("customer:update") && <button onClick={() => nav(`/customers/${c.id}/edit`)}><Pencil size={16} className="icon" aria-hidden />Edit customer</button>}
+        {can("billing:use") && <button className="primary big" disabled={!storeCode} title={storeCode ? undefined : "Choose a store first"} onClick={() => nav(`/customers/${c.id}/sale`)}><ShoppingCart size={18} className="icon" aria-hidden />Start sale</button>}
+      </>} />
       {notice && <Banner tone="success">{notice}</Banner>}
       {can("billing:use") && !storeCode && <Banner tone="info" title="Choose a store">Select your store at the top of the screen to start a sale.</Banner>}
 
       <div className="grid-2">
-        <Card title="Contact">
+        <Card title={<><Phone size={18} className="icon" aria-hidden />Contact</>}>
           <dl className="facts">
             <dt>Mobile</dt><dd className="mono">{c.phone}</dd>
             <dt>Email</dt><dd>{c.email ?? <span className="muted">Not recorded</span>}</dd>
@@ -63,7 +61,7 @@ export default function CustomerProfilePage() {
           </div>
         </Card>
 
-        <Card title="Recent bills">
+        <Card title={<><Receipt size={18} className="icon" aria-hidden />Recent bills</>}>
           <ErrorBanner error={bills.error} actions={<button onClick={bills.reload}>Retry</button>} />
           {bills.loading && !bills.data && <Spinner />}
           {bills.data && bills.data.length === 0 && <div className="muted">No bills at your stores yet.</div>}
@@ -82,7 +80,7 @@ export default function CustomerProfilePage() {
         </Card>
       </div>
 
-      <Card title={`Prescription history${rx.data ? ` (${rx.data.length})` : ""}`} actions={can("prescription:create") ? <button onClick={() => nav(`/customers/${c.id}/prescriptions/new`)}>Add prescription</button> : undefined}>
+      <Card title={<><Eye size={18} className="icon" aria-hidden />{`Prescription history${rx.data ? ` (${rx.data.length})` : ""}`}</>} actions={can("prescription:create") ? <button onClick={() => nav(`/customers/${c.id}/prescriptions/new`)}>Add prescription</button> : undefined}>
         <ErrorBanner error={rx.error} actions={<button onClick={rx.reload}>Retry</button>} />
         {rx.loading && !rx.data && <Spinner label="Loading prescriptions…" />}
         {rx.data && rx.data.length === 0 && <Banner tone="info" title="No prescription on file">Add the customer's prescription, or book an eye test. Frames and plain sunglasses can still be billed.</Banner>}

@@ -1,3 +1,4 @@
+import { Printer, Search } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api } from "../api/endpoints";
@@ -50,7 +51,7 @@ export default function RefundsPage() {
       <Card title="1 · Find the bill">
         <form className="inline" onSubmit={(e) => { e.preventDefault(); void open(invoice); }}>
           <div style={{ flex: "1 1 320px" }}><Field label="Invoice number" hint="As printed on the invoice, e.g. ELU/HSR/FY26/00003"><input value={invoice} onChange={(e) => setInvoice(e.target.value)} placeholder="ELU/HSR/FY26/00003" autoCapitalize="characters" /></Field></div>
-          <button className="primary" type="submit" disabled={!invoice.trim() || loading} style={{ alignSelf: "flex-start", marginTop: 22 }}>{loading ? "Loading…" : "Load bill"}</button>
+          <button className="primary" type="submit" disabled={!invoice.trim() || loading} style={{ alignSelf: "flex-end" }}><Search size={16} className="icon" aria-hidden />{loading ? "Loading…" : "Load bill"}</button>
         </form>
         <ErrorBanner error={error} actions={error instanceof ApiError && error.outcomeUnknown ? <button onClick={() => open(invoice)}>Retry</button> : undefined} />
         {storeCode && <RecentBills storeCode={storeCode} onPick={(no) => { setInvoice(no); void open(no); }} />}
@@ -252,7 +253,7 @@ function CreditNoteView({ note, onChange, headline = false }: { note: CreditNote
         </table>
       </div>
       <Row strong k={`Refund total · ${label(n.reasonCode.toLowerCase())}`} v={money(n.totals.amountPaise)} />
-      {n.status === "POSTED" && <button className="no-print" style={{ justifySelf: "start" }} onClick={() => window.print()}>Print credit note</button>}
+      {n.status === "POSTED" && <button className="no-print" style={{ justifySelf: "start" }} onClick={() => window.print()}><Printer size={16} className="icon" aria-hidden />Print credit note</button>}
     </div>
   );
 }

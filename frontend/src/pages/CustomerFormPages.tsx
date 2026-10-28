@@ -1,17 +1,17 @@
-import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api/endpoints";
 import { ApiError } from "../api/client";
 import { CustomerForm } from "../components/CustomerForm";
 import { PrescriptionForm } from "../components/PrescriptionForm";
-import { Banner, Card, ErrorBanner, Spinner } from "../components/ui";
+import { BackLink, Banner, Card, ErrorBanner, PageHead, Spinner } from "../components/ui";
 import { useLoad } from "../lib/useLoad";
 
 export function NewCustomerPage() {
   const nav = useNavigate();
   return (
     <div className="page">
-      <Link to="/customers">← Customers</Link>
-      <h1>Add customer</h1>
+      <BackLink to="/customers">Customers</BackLink>
+      <PageHead title="Add customer" sub="The mobile number is the key: it must not belong to anyone else." />
       <Card>
         <CustomerForm
           mode="create"
@@ -30,8 +30,8 @@ export function EditCustomerPage() {
   const { data, error, loading, reload } = useLoad(() => api.customerById(id), [id]);
   return (
     <div className="page">
-      <Link to={`/customers/${id}`}>← Back to customer</Link>
-      <h1>Edit customer</h1>
+      <BackLink to={`/customers/${id}`}>Back to customer</BackLink>
+      <PageHead title="Edit customer" />
       {loading && !data && <Spinner />}
       {error instanceof ApiError && error.status === 404 ? <Banner tone="warn" title="Customer not found" /> : <ErrorBanner error={error} actions={<button onClick={reload}>Retry</button>} />}
       {data && (
@@ -53,8 +53,8 @@ export function AddPrescriptionPage() {
   const back = fromSale ? `/customers/${id}/sale` : `/customers/${id}`;
   return (
     <div className="page">
-      <Link to={back}>← {fromSale ? "Back to the sale" : "Back to customer"}</Link>
-      <h1>Add prescription{data ? ` · ${data.name}` : ""}</h1>
+      <BackLink to={back}>{fromSale ? "Back to the sale" : "Back to customer"}</BackLink>
+      <PageHead title={`Add prescription${data ? ` · ${data.name}` : ""}`} sub="Saved as a new record. Earlier prescriptions are never changed." />
       {loading && !data && <Spinner />}
       {error instanceof ApiError && error.status === 404 ? <Banner tone="warn" title="Customer not found" /> : <ErrorBanner error={error} actions={<button onClick={reload}>Retry</button>} />}
       {data && (

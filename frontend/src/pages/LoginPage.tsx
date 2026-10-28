@@ -1,3 +1,4 @@
+import { Glasses } from "lucide-react";
 import { useState } from "react";
 import { ApiError } from "../api/client";
 import { Banner, ErrorBanner, Field } from "../components/ui";
@@ -27,7 +28,7 @@ export default function LoginPage() {
   return (
     <div className="login">
       <form className="card login-card" onSubmit={(e) => { e.preventDefault(); void submit(); }}>
-        <div className="brand login-brand">Eluno Till</div>
+        <div className="brand login-brand"><span className="brand-mark"><Glasses size={20} aria-hidden /></span>Eluno <small>Till</small></div>
         <h1>Sign in</h1>
         {notice && <Banner tone="info">{notice}</Banner>}
         <Field label="Username" hint="Your staff ID, e.g. s105">

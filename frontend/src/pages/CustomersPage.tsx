@@ -1,9 +1,10 @@
+import { Eye, Pencil, Search, ShoppingCart, UserPlus, Users } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { api } from "../api/endpoints";
 import type { CustomerRow } from "../api/types";
 import { SummaryPill } from "../components/RxParts";
-import { Banner, Card, ErrorBanner, Spinner } from "../components/ui";
+import { Banner, Card, EmptyState, ErrorBanner, PageHead, Spinner } from "../components/ui";
 import { useAuth } from "../state/auth";
 
 const PAGE = 20;
@@ -46,17 +47,15 @@ export default function CustomersPage() {
 
   return (
     <div className="page">
-      <div className="between">
-        <h1>Customers</h1>
-        {can("customer:create") && <button className="primary big" onClick={() => nav("/customers/new")}>Add customer</button>}
-      </div>
+      <PageHead title="Customers" sub="Search, open a profile, add a prescription or start a sale."
+        actions={can("customer:create") ? <button className="primary big" onClick={() => nav("/customers/new")}><UserPlus size={18} className="icon" aria-hidden />Add customer</button> : undefined} />
       {notice && <Banner tone="success">{notice}</Banner>}
 
       <Card>
         <form role="search" onSubmit={(e) => { e.preventDefault(); setQuery(text.trim()); }}>
           <label className="field">
-            <span>Search customers</span>
-            <input type="search" autoFocus placeholder="Name, mobile number or email" value={text} onChange={(e) => setText(e.target.value)} />
+            <span className="sr-only">Search customers</span>
+            <span className="search"><Search size={18} className="icon" aria-hidden /><input type="search" autoFocus placeholder="Name, mobile number or email" value={text} onChange={(e) => setText(e.target.value)} /></span>
           </label>
         </form>
 
@@ -65,13 +64,13 @@ export default function CustomersPage() {
 
         {state !== "loading" && !error && rows.length === 0 && (
           query
-            ? <Banner tone="info" title="No customers match">Nobody matches “{query}”. Check the spelling or try the last digits of the mobile number.{can("customer:create") && <> <Link to="/customers/new">Add a new customer</Link></>}</Banner>
-            : <Banner tone="info" title="No customers yet">Customers you add will show up here.</Banner>
+            ? <EmptyState icon={<Search size={28} aria-hidden />} title="No customers match" actions={can("customer:create") ? <Link className="btn" to="/customers/new">Add a new customer</Link> : undefined}>Nobody matches “{query}”. Check the spelling or try the last digits of the mobile number.</EmptyState>
+            : <EmptyState icon={<Users size={28} aria-hidden />} title="No customers yet">Customers you add will show up here.</EmptyState>
         )}
 
         {rows.length > 0 && (
           <div className="scroll">
-            <table aria-label="Customers">
+            <table className="stack-table" aria-label="Customers">
               <thead>
                 <tr><th>Customer</th><th>Mobile</th><th>Email</th><th>Latest prescription</th><th className="num">Rx</th><th><span className="sr-only">Actions</span></th></tr>
               </thead>
@@ -88,9 +87,9 @@ export default function CustomersPage() {
                     <td className="num">{rx ? rx.count : "—"}</td>
                     <td>
                       <div className="inline row-actions">
-                        <Link className="btn" to={`/customers/${c.id}`} aria-label={`View ${c.firstName} ${c.lastName}`}>View</Link>
-                        {can("customer:update") && <Link className="btn" to={`/customers/${c.id}/edit`} aria-label={`Edit ${c.firstName} ${c.lastName}`}>Edit</Link>}
-                        {can("billing:use") && <Link className="btn primary" to={`/customers/${c.id}/sale`} aria-label={`Start sale for ${c.firstName} ${c.lastName}`}>Start sale</Link>}
+                        <Link className="btn" to={`/customers/${c.id}`} aria-label={`View ${c.firstName} ${c.lastName}`}><Eye size={16} className="icon" aria-hidden />View</Link>
+                        {can("customer:update") && <Link className="btn" to={`/customers/${c.id}/edit`} aria-label={`Edit ${c.firstName} ${c.lastName}`}><Pencil size={16} className="icon" aria-hidden />Edit</Link>}
+                        {can("billing:use") && <Link className="btn primary" to={`/customers/${c.id}/sale`} aria-label={`Start sale for ${c.firstName} ${c.lastName}`}><ShoppingCart size={16} className="icon" aria-hidden />Start sale</Link>}
                       </div>
                     </td>
                   </tr>

@@ -1,4 +1,5 @@
 import { NavLink, Route, Routes } from "react-router-dom";
+import { BarChart3, Glasses, LogOut, MapPin, ShoppingBag, Undo2, Users } from "lucide-react";
 import { useAuth } from "./state/auth";
 import { SessionProvider, useSession } from "./state/session";
 import LoginPage from "./pages/LoginPage";
@@ -9,7 +10,7 @@ import { AddPrescriptionPage, EditCustomerPage, NewCustomerPage } from "./pages/
 import StartSalePage from "./pages/StartSalePage";
 import RefundsPage from "./pages/RefundsPage";
 import DayEndPage from "./pages/DayEndPage";
-import { Banner, ErrorBanner, Pill, Spinner } from "./components/ui";
+import { Banner, ErrorBanner, Pill, Spinner, ToastProvider } from "./components/ui";
 
 function UserBar() {
   const { user, logout } = useAuth();
@@ -23,12 +24,12 @@ function UserBar() {
           {s.stores.map((x) => <option key={x.code} value={x.code}>{x.name}</option>)}
         </select>
       ) : (
-        <span className="who-store">{s.store?.name ?? (s.stores ? "No store assigned" : "Loading…")}</span>
+        <span className="who-store"><MapPin size={15} className="icon" aria-hidden />{s.store?.name ?? (s.stores ? "No store assigned" : "Loading…")}</span>
       )}
       <span className="who">
         {user.name} <Pill tone={user.role === "store_manager" ? "info" : "neutral"}>{user.role === "store_manager" ? "Store manager" : "Salesperson"}</Pill>
       </span>
-      <button onClick={() => void logout()}>Sign out</button>
+      <button className="ghost" onClick={() => void logout()}><LogOut size={16} className="icon" aria-hidden />Sign out</button>
     </div>
   );
 }
@@ -39,12 +40,12 @@ function Shell() {
   return (
     <>
       <header className="topbar no-print">
-        <span className="brand">Eluno Till</span>
+        <span className="brand"><span className="brand-mark"><Glasses size={20} aria-hidden /></span>Eluno <small>Till</small></span>
         <nav className="nav">
-          <NavLink to="/" end>New sale</NavLink>
-          {can("customer:view") && <NavLink to="/customers">Customers</NavLink>}
-          <NavLink to="/refunds">Refunds</NavLink>
-          {can("report:view") && <NavLink to="/day-end">Day-end</NavLink>}
+          <NavLink to="/" end><ShoppingBag size={18} className="icon" aria-hidden /><span className="label">New sale</span></NavLink>
+          {can("customer:view") && <NavLink to="/customers"><Users size={18} className="icon" aria-hidden /><span className="label">Customers</span></NavLink>}
+          <NavLink to="/refunds"><Undo2 size={18} className="icon" aria-hidden /><span className="label">Refunds</span></NavLink>
+          {can("report:view") && <NavLink to="/day-end"><BarChart3 size={18} className="icon" aria-hidden /><span className="label">Day-end</span></NavLink>}
         </nav>
         <UserBar />
       </header>
@@ -79,7 +80,9 @@ export default function App() {
   // Keyed by user so nothing from one person's session (store, half-built cart) carries over to the next.
   return (
     <SessionProvider key={user.username}>
-      <Shell />
+      <ToastProvider>
+        <Shell />
+      </ToastProvider>
     </SessionProvider>
   );
 }
