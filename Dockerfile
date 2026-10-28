@@ -17,8 +17,9 @@ RUN cd frontend && npm run build
 COPY backend backend
 
 WORKDIR /app/backend
-ENV PORT=3000 MOCK_PORT=8787 FRONTEND_DIR=/app/frontend/dist
+ENV PORT=3000 MOCK_PORT=8787 FRONTEND_DIR=/app/frontend/dist TILL_RESET_DB=1
 EXPOSE 3000
 # Starts the mock on :8787, waits for it, then the API (serving the UI) on $PORT.
 # The till's SQLite file and the mock's memory both live in this container, so they reset together.
-CMD ["npm", "start"]
+# node (not npm) is PID 1 so Render's SIGTERM reaches the supervisor, which stops the mock and the API.
+CMD ["node", "--import", "tsx", "scripts/start.ts"]

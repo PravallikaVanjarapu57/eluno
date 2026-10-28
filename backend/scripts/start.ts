@@ -3,6 +3,7 @@
 //   npm start            mock without random 429/503
 //   npm run start:flaky  mock with production-like 429/503
 import { spawn, type ChildProcess } from "node:child_process";
+import { resetDbFiles } from "./resetDb.js";
 
 const MOCK_PORT = Number(process.env.MOCK_PORT ?? 8787);
 const MOCK_URL = `http://localhost:${MOCK_PORT}`;
@@ -49,6 +50,9 @@ if (await mockIsUp()) {
   const args = ["starter-kit/mock-apis/mock_server.py", "--port", String(MOCK_PORT)];
   if (!flaky) args.push("--no-flake");
   const pythonBin = process.env.PYTHON ?? (process.platform === "win32" ? "python" : "python3");
+  // We own an in-memory mock, so a leftover till database would disagree with it (hosted demo: TILL_RESET_DB=1).
+  const removed = resetDbFiles(process.env.DB_PATH ?? "data/till.db", process.env.TILL_RESET_DB === "1");
+  if (removed.length) console.log(`TILL_RESET_DB=1: removed ${removed.join(", ")} (the mock starts empty)`);
   run(pythonBin, args);
   await waitFor(mockIsUp, "mock server");
 }
