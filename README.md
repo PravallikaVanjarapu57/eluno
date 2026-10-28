@@ -73,6 +73,39 @@ server would refuse. \* = see *Open questions*. Store managers can do everything
 - **Brute force:** 5 wrong passwords lock a username for 15 minutes (429 + `Retry-After`). Unknown users cost the same time as wrong passwords.
 - **Responses:** `401` not signed in / session ended, `403` signed in but not allowed (`FORBIDDEN`, `STORE_FORBIDDEN`, `CSRF_INVALID`, `LENS_RULES_LOCKED`).
 
+### Customer management (Customers tab)
+
+Both roles (salesperson and store manager) can do all of this; the server checks `customer:view`, `customer:create`, `customer:update`, `prescription:create`
+and `billing:use` on every call. Lens validation rules stay locked for everyone, and day-end stays manager-only.
+
+**Workflow:** *Customers* → search (name, mobile or email; server-side, 20 per page, *Load more*) → open a profile (contact, prescription history, recent bills at your stores)
+→ *Edit customer*, *Add prescription* or *Start sale*. *Start sale* creates a cart for that customer **by id** (no phone lookup), shows every prescription
+(valid / expired / future-dated), and asks you to **pick one explicitly** when more than one is in force (a single one is used automatically; expired ones cannot be picked).
+*Add prescription* from the sale returns to the same cart (the cart id is remembered on the device and lives on the server), and the till then bills against the chosen
+prescription using the existing frame, lens, offer, GST and checkout logic. Nothing is recalculated in the browser.
+
+| Method and path | Purpose |
+|---|---|
+| `GET /api/customers?q=&cursor=&limit=` | One page (max 50) with a prescription summary per row; `nextCursor` is null on the last page. `?phone=` is the old till lookup |
+| `POST /api/customers` | Create (existing behaviour) |
+| `GET /api/customers/:id`, `PATCH /api/customers/:id` | Open / edit first name, last name, email. The mobile number cannot be changed (prescriptions and bills are found by it): `422` with a message on the `phone` field |
+| `GET /api/customers/:id/bills` | Their bills at the caller's stores |
+| `GET /api/customers/:id/prescriptions`, `/eligible`, `/:rxId` | Newest first, each with `status` and `eligible`; `/eligible` is the list a sale chooses from |
+| `POST /api/customers/:id/prescriptions` | Add one (always a new record; `clientRef` makes retries idempotent). Field errors in `details.fields`, e.g. `od.axis` |
+| `POST /api/carts {customerId, storeCode}` | Cart for an existing customer (`phone` still works) |
+| `PUT /api/carts/:id/prescription {rxId or null}` | Choose the prescription for the sale; refused if not the customer's or not in force today |
+
+**Where data lives.** Customers are in (mock) Shopify, which stays the system of record; the mock gained `GET customers.json`, free-text `customers/search.json`, `GET/PUT customers/{id}.json`.
+Prescriptions are in the (mock) store tool, which gained `GET /smt/prescriptions/{id}`, a batch `?phones=` read and an idempotent `POST /smt/prescriptions` (unique `client_ref`).
+The till keeps no copy of either. Mock state is in memory, so it resets on restart. Staff-entered prescriptions are stored as `external` with no optometrist id.
+Entry rules (`domain/prescription.ts`): 0.25 D grid; SPH -20..+20; CYL -8..+8; AXIS 0-180, required with a cylinder and refused without one; ADD 0.25-4 or empty;
+PD 40-80; test date not in the future; expiry defaults to one year after the test (the convention of every seeded prescription) and may not exceed two years.
+Validity itself is unchanged: valid from the test date through `validUntil`. Audit: `customer.updated` (field names only), `prescription.created`, `cart.prescription_selected`, under the signed-in staff.
+
+**Limits of the mock.** Real Shopify paginates with `Link` cursors and its search is fuzzy; the mock pages by id and substring-matches. Date of birth exists only in seed metadata, not in
+the Shopify customer shape the till reads, so it is not edited. A real store tool's prescription API is unknown: the create contract above is ours. Two people editing one customer at once is
+last-write-wins. Customer bills are found by scanning the till's own bills for your stores: fine at this scale, not for very large histories.
+
 ### Customers and reports
 
 - **New customer** (New sale → *New customer…*, or offered when a lookup finds nobody): `POST /api/customers` through the Shopify adapter.
@@ -94,7 +127,7 @@ are invalid for them), `9000000000` (expired prescription), or create your own. 
 
 ```bash
 cd backend  && npm test && npm run typecheck && npm run lint
-cd frontend && npm test && npm run typecheck && npm run build
+cd frontend && npm test && npm run typecheck && npm run build   # the frontend has no lint step
 ```
 
 ## Reliability in the UI
@@ -163,4 +196,5 @@ This is a **demo against a mock**, secured sensibly, not a production identity s
 3. **Who may issue refunds?** Unchanged from before: any signed-in staff member at the bill's store, with a reason code, attributed to them.
    The earlier question to finance (managers only?) is still open.
 4. **Manager discounts** now need the **manager's own sign-in** on the till (they are the approver). Is that acceptable at the counter, or is a manager PIN wanted?
-5. **Optometrists** have no login because only two roles were approved. Do they need one (e.g. to record prescriptions)?
+5. **Phone changes**: should staff be able to change a customer's mobile number? It would need prescriptions re-keyed in the store tool, so it is blocked for now.
+6. **Optometrists** have no login because only two roles were approved. Do they need one (e.g. to record prescriptions)?
