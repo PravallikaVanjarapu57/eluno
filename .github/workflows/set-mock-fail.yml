@@ -1,0 +1,76 @@
+name: Set MOCK_FAIL on Render (demo failures)
+
+# Manual only: Actions tab -> "Set MOCK_FAIL on Render" -> Run workflow.
+# Sets (or clears) the MOCK_FAIL environment variable on the Render service and redeploys it, so the mock
+# injects the chosen failures. Each deploy also resets the demo's data (see README).
+on:
+  workflow_dispatch:
+    inputs:
+      mock_fail:
+        description: 'Failure rules, e.g. 503:terminal/charges:5 or 429:orders.json:15. Leave empty to turn failures off.'
+        required: false
+        default: '503:terminal/charges:5'
+        type: string
+
+jobs:
+  set-mock-fail:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+      RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+      MOCK_FAIL_VALUE: ${{ inputs.mock_fail }}
+      API: https://api.render.com/v1
+    steps:
+      - name: Validate input
+        run: |
+          set -euo pipefail
+          # MODE:PATH:COUNT, comma separated; MODE is an HTTP status or "drop".
+          if [ -n "$MOCK_FAIL_VALUE" ] && ! [[ "$MOCK_FAIL_VALUE" =~ ^((([0-9]{3}|drop):[A-Za-z0-9_./-]+:[0-9]+)(,|$))+$ ]]; then
+            echo "::error::MOCK_FAIL must look like MODE:PATH:COUNT[,MODE:PATH:COUNT...], e.g. 503:terminal/charges:5"; exit 1
+          fi
+
+      - name: Set or clear MOCK_FAIL
+        run: |
+          set -euo pipefail
+          if [ -n "$MOCK_FAIL_VALUE" ]; then
+            echo "Setting MOCK_FAIL=$MOCK_FAIL_VALUE"
+            code=$(curl -sS -o /tmp/out -w '%{http_code}' -X PUT "$API/services/$RENDER_SERVICE_ID/env-vars/MOCK_FAIL" \
+              -H "Authorization: Bearer $RENDER_API_KEY" -H "Content-Type: application/json" \
+              -d "$(jq -n --arg v "$MOCK_FAIL_VALUE" '{value:$v}')")
+          else
+            echo "Clearing MOCK_FAIL"
+            code=$(curl -sS -o /tmp/out -w '%{http_code}' -X DELETE "$API/services/$RENDER_SERVICE_ID/env-vars/MOCK_FAIL" \
+              -H "Authorization: Bearer $RENDER_API_KEY")
+            [ "$code" = 404 ] && code=204   # already unset
+          fi
+          cat /tmp/out; echo
+          [[ "$code" =~ ^2 ]] || { echo "::error::Render env-var update failed ($code)"; exit 1; }
+
+      - name: Redeploy so the new value takes effect
+        run: |
+          set -euo pipefail
+          resp=$(curl -sS -w '\n%{http_code}' -X POST "$API/services/$RENDER_SERVICE_ID/deploys" \
+            -H "Authorization: Bearer $RENDER_API_KEY" -H "Content-Type: application/json" -d '{}')
+          code=$(tail -n1 <<<"$resp"); body=$(sed '$d' <<<"$resp")
+          echo "Render responded $code: $body"
+          [[ "$code" =~ ^2 ]] || { echo "::error::Deploy trigger failed ($code)"; exit 1; }
+          echo "deploy_id=$(jq -r '.id' <<<"$body")" >> "$GITHUB_ENV"
+
+      - name: Wait for the deploy to go live
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 60); do
+            status=$(curl -sS "$API/services/$RENDER_SERVICE_ID/deploys/$deploy_id" \
+              -H "Authorization: Bearer $RENDER_API_KEY" | jq -r '.status')
+            echo "[$i] deploy status: $status"
+            case "$status" in
+              live) exit 0 ;;
+              build_failed|update_failed|canceled|pre_deploy_failed) echo "::error::Deploy ended as $status"; exit 1 ;;
+            esac
+            sleep 15
+          done
+          echo "::error::Timed out waiting for the deploy"; exit 1
+
+      - name: Smoke test
+        run: curl -fsS --retry 5 --retry-delay 10 https://eluno-till.onrender.com/api/health
