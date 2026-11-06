@@ -31,8 +31,8 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: pravallikavanjarapu57   # owner of the PAT in GHCR_TOKEN
+          password: ${{ secrets.GHCR_TOKEN }}
 
       # Render runs linux/amd64. The runner is amd64 already, so no emulation is needed for the build itself.
       - name: Build and push image
